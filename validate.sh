@@ -31,10 +31,10 @@ echo "✅ Build successful"
 echo
 
 echo "📝 Checking code formatting..."
-if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+if [ "$(gofmt -s -l $(find . -name "*.go" -not -path "./vendor/*") | wc -l)" -gt 0 ]; then
     echo "❌ The following files are not formatted properly:"
-    gofmt -s -l .
-    echo "Run 'gofmt -w .' to fix formatting issues"
+    gofmt -s -l $(find . -name "*.go" -not -path "./vendor/*")
+    echo "Run 'gofmt -w \$(find . -name \"*.go\" -not -path \"./vendor/*\")' to fix formatting issues"
     exit 1
 fi
 echo "✅ Code formatting OK"

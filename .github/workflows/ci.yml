@@ -79,9 +79,9 @@ jobs:
 
     - name: Check formatting
       run: |
-        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+        if [ "$(gofmt -s -l $(find . -name "*.go" -not -path "./vendor/*") | wc -l)" -gt 0 ]; then
           echo "The following files are not formatted properly:"
-          gofmt -s -l .
+          gofmt -s -l $(find . -name "*.go" -not -path "./vendor/*")
           exit 1
         fi
 
