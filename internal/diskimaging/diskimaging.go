@@ -40,7 +40,11 @@ func CreateDiskImage(diskPath string, outputDir string) (*models.DiskImage, erro
 		utils.LogError("Failed to open disk", map[string]string{"disk": diskPath, "error": err.Error()})
 		return nil, fmt.Errorf("failed to open disk: %w", err)
 	}
-	defer sourceFile.Close()
+	defer func() {
+		if err := sourceFile.Close(); err != nil {
+			utils.LogError("Failed to close source file", map[string]string{"error": err.Error()})
+		}
+	}()
 
 	// Get source file info
 	_, err = sourceFile.Stat()
@@ -55,7 +59,11 @@ func CreateDiskImage(diskPath string, outputDir string) (*models.DiskImage, erro
 		utils.LogError("Failed to create image file", map[string]string{"path": imagePath, "error": err.Error()})
 		return nil, fmt.Errorf("failed to create image file: %w", err)
 	}
-	defer imageFile.Close()
+	defer func() {
+		if err := imageFile.Close(); err != nil {
+			utils.LogError("Failed to close image file", map[string]string{"error": err.Error()})
+		}
+	}()
 
 	// Copy disk content to image with hash calculation
 	hash := md5.New()
@@ -64,7 +72,9 @@ func CreateDiskImage(diskPath string, outputDir string) (*models.DiskImage, erro
 	copiedBytes, err := io.Copy(multiWriter, sourceFile)
 	if err != nil {
 		utils.LogError("Failed to copy disk content", map[string]string{"error": err.Error()})
-		os.Remove(imagePath) // Clean up failed image
+		if err := os.Remove(imagePath); err != nil {
+			utils.LogError("Failed to remove incomplete image", map[string]string{"path": imagePath, "error": err.Error()})
+		}
 		return nil, fmt.Errorf("failed to copy disk content: %w", err)
 	}
 
@@ -107,7 +117,11 @@ func VerifyDiskImage(imagePath string, expectedHash string) bool {
 		utils.LogError("Failed to open image file for verification", map[string]string{"path": imagePath, "error": err.Error()})
 		return false
 	}
-	defer imageFile.Close()
+	defer func() {
+		if err := imageFile.Close(); err != nil {
+			utils.LogError("Failed to close image file", map[string]string{"error": err.Error()})
+		}
+	}()
 
 	hash := md5.New()
 	if _, err := io.Copy(hash, imageFile); err != nil {

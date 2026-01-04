@@ -8,8 +8,12 @@ import (
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
-	os.Unsetenv("TRACIUM_SERVER_URL")
-	os.Unsetenv("TRACIUM_AGENT_TOKEN")
+	if err := os.Unsetenv("TRACIUM_SERVER_URL"); err != nil {
+		t.Logf("Warning: failed to unset TRACIUM_SERVER_URL: %v", err)
+	}
+	if err := os.Unsetenv("TRACIUM_AGENT_TOKEN"); err != nil {
+		t.Logf("Warning: failed to unset TRACIUM_AGENT_TOKEN: %v", err)
+	}
 	cfg := config.Load()
 	if cfg.ServerURL != "https://api.tracium.com/v1/data" {
 		t.Errorf("Expected default server URL, got %s", cfg.ServerURL)
@@ -20,8 +24,12 @@ func TestLoadConfigDefaults(t *testing.T) {
 }
 
 func TestLoadConfigEnvVars(t *testing.T) {
-	os.Setenv("TRACIUM_SERVER_URL", "http://localhost:8080")
-	os.Setenv("TRACIUM_AGENT_TOKEN", "testtoken")
+	if err := os.Setenv("TRACIUM_SERVER_URL", "http://localhost:8080"); err != nil {
+		t.Fatalf("Failed to set TRACIUM_SERVER_URL: %v", err)
+	}
+	if err := os.Setenv("TRACIUM_AGENT_TOKEN", "testtoken"); err != nil {
+		t.Fatalf("Failed to set TRACIUM_AGENT_TOKEN: %v", err)
+	}
 	cfg := config.Load()
 	if cfg.ServerURL != "http://localhost:8080" {
 		t.Errorf("Expected env server URL, got %s", cfg.ServerURL)
