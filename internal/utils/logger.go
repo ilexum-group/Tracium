@@ -1,3 +1,4 @@
+// Package utils provides utility functions and types for the Tracium agents
 package utils
 
 import (

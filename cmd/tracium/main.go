@@ -1,3 +1,4 @@
+// Package main implements the Tracium agent that collects system information and sends it to a remote server.
 package main
 
 import (

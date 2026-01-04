@@ -1,3 +1,4 @@
+// Package sender handles sending collected data to the remote server
 package sender
 
 import (
@@ -39,7 +40,11 @@ func SendData(cfg *config.Config, data models.SystemData) error {
 		utils.LogError("Failed to send request", map[string]string{"error": err.Error()})
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			utils.LogError("Failed to close response body", map[string]string{"error": err.Error()})
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		utils.LogWarn("Server returned non-OK status", map[string]string{"status_code": fmt.Sprintf("%d", resp.StatusCode)})
