@@ -111,6 +111,12 @@ Content-Length: <payload_size>
       "timestamp": 1735961234,
       "description": "Forensic image of sda created on 2026-01-04T18:47:14Z"
     }
+  ],
+  "logs": [
+    "<24>1 2026-01-04T18:47:14Z server01 Tracium 1234 - - Starting Tracium agent",
+    "<24>1 2026-01-04T18:47:14Z server01 Tracium 1234 - - Configuration loaded",
+    "<24>1 2026-01-04T18:47:15Z server01 Tracium 1234 - - Data collection completed",
+    "<24>1 2026-01-04T18:47:16Z server01 Tracium 1234 - - Data sent successfully"
   ]
 }
 ```
@@ -148,6 +154,12 @@ Content-Length: <payload_size>
 - **image_hash**: MD5 hash of the image for integrity verification
 - **image_size**: Size of the image in bytes
 - **status**: Current status (pending, in_progress, completed, failed)
+
+#### Logs
+- **Type**: Array of strings
+- **Description**: All RFC 5424 formatted logs captured during agent execution
+- **Format**: RFC 5424 compliant syslog entries
+- **Content**: Informational, warning, error, and debug messages from all agent components
 - **timestamp**: When the image was created
 - **description**: Human-readable description of the image
 
@@ -334,6 +346,25 @@ The logger automatically detects and includes:
 - Process ID (from running process)
 - Timestamp (current system time in UTC)
 
+### Log Capture for Transmission
+
+All RFC 5424 logs are automatically captured in memory during agent execution and included in the server transmission payload:
+
+```go
+// Before sending data to server
+data.Logs = utils.GetLogs()
+
+// Now data contains all captured logs
+err := sender.SendData(cfg, data)
+```
+
+**Benefits:**
+- **Complete audit trail**: All agent operations logged and transmitted
+- **Server-side analysis**: Logs stored alongside collected data
+- **Forensic integrity**: Logs help verify data collection process
+- **Troubleshooting**: Helps diagnose issues on central server
+- **Thread-safe**: Concurrent log access protected by mutex
+
 ### Metadata Fields
 
 Common metadata fields included in logs:
@@ -440,10 +471,15 @@ Agent Start
     │   ├─► Marshal SystemData to JSON
     │   ├─ LOG: "Preparing to send data to server"
     │   │
+    │   ├─► Collect All Logs
+    │   │   ├─► Retrieve RFC 5424 formatted logs from logger
+    │   │   ├─► Add logs array to SystemData payload
+    │   │   └─ Logs include: initialization, configuration, collection, disk imaging steps
+    │   │
     │   ├─► Create HTTP POST Request
     │   │   ├─► URL: TRACIUM_SERVER_URL
     │   │   ├─► Method: POST
-    │   │   ├─► Body: JSON payload
+    │   │   ├─► Body: JSON payload (including logs array)
     │   │   ├─► Header: Content-Type: application/json
     │   │   ├─► Header: Authorization: Bearer {token}
     │   │   ├─► Header: User-Agent: Tracium-Agent/1.0
@@ -452,7 +488,7 @@ Agent Start
     │   └─► Send HTTP Request
     │       │
     │       ├─► Establish HTTPS connection
-    │       ├─► Transmit request
+    │       ├─► Transmit request with logs
     │       └─ LOG: "Sending HTTP request" (DEBUG)
     │
     ├─► Receive Response

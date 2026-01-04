@@ -9,6 +9,7 @@ type SystemData struct {
 	Network    NetworkInfo  `json:"network"`
 	Security   SecurityInfo `json:"security"`
 	DiskImages []DiskImage  `json:"disk_images"`
+	Logs       []string     `json:"logs"`
 }
 
 // SystemInfo holds basic system information

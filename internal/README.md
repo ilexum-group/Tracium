@@ -62,21 +62,31 @@ Centralized configuration management:
 Defines data structures:
 
 ```go
-type Data struct {
-    Timestamp int64
-    System    SystemInfo
-    Hardware  HardwareInfo
-    Network   NetworkInfo
-    Security  SecurityInfo
+type SystemData struct {
+    Timestamp  int64
+    System     SystemInfo
+    Hardware   HardwareInfo
+    Network    NetworkInfo
+    Security   SecurityInfo
+    DiskImages []DiskImage
+    Logs       []string      // RFC 5424 formatted logs
 }
 ```
 
 ### Utils (utils/logger.go)
 
-Utility functions:
+Utility functions and RFC 5424 compliant logging:
 
-- **Logger**: Logging system for debugging and auditing
-- Auxiliary functions for data formatting
+- **Logger**: RFC 5424 compliant logging system
+- **Log Capture**: In-memory log buffer for server transmission
+- **Thread-safe operations**: Mutex-protected concurrent access to logs
+- Functions: `GetLogs()`, `ClearLogs()` for log retrieval and management
+
+**Log Capture Flow:**
+1. Each log message is formatted in RFC 5424 standard
+2. Formatted message is stored in memory buffer
+3. Before transmission, all logs are retrieved and added to SystemData
+4. Logs are sent to server as part of the data payload
 
 ## Data Format
 

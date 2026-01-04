@@ -90,3 +90,56 @@ func TestLoggerWithoutMetadata(t *testing.T) {
 		t.Errorf("Expected message content, got: %s", logOutput)
 	}
 }
+
+func TestLogCapture(t *testing.T) {
+	// Re-initialize logger to start fresh
+	err := utils.InitDefaultLogger()
+	if err != nil {
+		t.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	// Clear any existing logs
+	utils.ClearLogs()
+
+	// Suppress stdout for cleaner test output
+	oldStdout := os.Stdout
+	_, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Log several messages
+	utils.LogInfo("Test message 1", map[string]string{"id": "1"})
+	utils.LogWarn("Test message 2", map[string]string{"id": "2"})
+	utils.LogError("Test message 3", map[string]string{"id": "3"})
+
+	// Restore stdout
+	err = w.Close()
+	if err != nil {
+		t.Fatalf("Failed to close pipe writer: %v", err)
+	}
+	os.Stdout = oldStdout
+
+	// Get captured logs
+	logs := utils.GetLogs()
+
+	// Verify logs were captured
+	if len(logs) < 3 {
+		t.Errorf("Expected at least 3 logs, got %d. Logs: %v", len(logs), logs)
+	}
+
+	// Verify log content (should be RFC 5424 formatted)
+	for i, log := range logs {
+		if !strings.Contains(log, "Tracium") {
+			t.Errorf("Log %d missing app name: %s", i, log)
+		}
+		if !strings.Contains(log, "<") {
+			t.Errorf("Log %d missing priority format: %s", i, log)
+		}
+	}
+
+	// Test ClearLogs
+	utils.ClearLogs()
+	logsAfterClear := utils.GetLogs()
+	if len(logsAfterClear) != 0 {
+		t.Errorf("Expected 0 logs after clear, got %d", len(logsAfterClear))
+	}
+}

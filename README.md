@@ -23,8 +23,9 @@ The agent collects and transmits the following data:
 3. Network Information: active interfaces, IP addresses, MAC addresses, listening ports
 4. Security Information: running processes with resource usage, active system services
 5. Disk Imaging: optional forensic copies of disks with MD5 hash verification
+6. Execution Logs: RFC 5424 compliant logs of all agent operations and data collection steps
 
-All collected data and disk images are transmitted to the remote server via HTTPS.
+All collected data, disk images, and execution logs are transmitted to the remote server via HTTPS.
 
 ## Quick Start
 

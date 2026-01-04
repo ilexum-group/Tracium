@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/crewjam/rfc5424"
@@ -24,6 +25,8 @@ type RFC5424Logger struct {
 	hostname  string
 	processID string
 	facility  rfc5424.Priority // Using the library's priority type for facility
+	mu        sync.Mutex       // Protect concurrent access to logs
+	logs      []string         // In-memory log buffer for server transmission
 }
 
 // NewRFC5424Logger creates a new RFC 5424 compliant logger using the crewjam/rfc5424 library
@@ -42,6 +45,7 @@ func NewRFC5424Logger(appName string) (*RFC5424Logger, error) {
 		hostname:  hostname,
 		processID: processID,
 		facility:  rfc5424.User, // User-level facility
+		logs:      make([]string, 0),
 	}, nil
 }
 
@@ -76,19 +80,30 @@ func (l *RFC5424Logger) createMessage(severity rfc5424.Priority, message string,
 	return msg
 }
 
-// writeLog writes the formatted RFC 5424 log entry to stdout
+// writeLog writes the formatted RFC 5424 log entry to stdout and captures it for transmission
 func (l *RFC5424Logger) writeLog(severity rfc5424.Priority, message string, meta map[string]string) {
 	msg := l.createMessage(severity, message, meta)
+	var formattedLog string
 	_, err := msg.WriteTo(os.Stdout)
 	if err != nil {
 		// Fallback to simple format if writing fails
-		fmt.Printf("<%d>1 %s %s %s %s - - %s\n",
+		formattedLog = fmt.Sprintf("<%d>1 %s %s %s %s - - %s",
 			int(l.facility|severity),
 			time.Now().UTC().Format(time.RFC3339),
 			l.hostname, l.appName, l.processID, message)
-		return
+		fmt.Println(formattedLog)
+	} else {
+		// Extract formatted message from the RFC 5424 message
+		formattedLog = fmt.Sprintf("<%d>1 %s %s %s %s - - %s",
+			int(l.facility|severity),
+			msg.Timestamp.Format(time.RFC3339),
+			msg.Hostname, msg.AppName, msg.ProcessID, message)
+		fmt.Println()
 	}
-	fmt.Println() // Add newline after the message
+	// Capture log for server transmission (thread-safe)
+	l.mu.Lock()
+	l.logs = append(l.logs, formattedLog)
+	l.mu.Unlock()
 }
 
 // LogInfo logs an informational message (severity Info)
@@ -109,6 +124,22 @@ func (l *RFC5424Logger) LogError(message string, meta map[string]string) {
 // LogDebug logs a debug message (severity Debug)
 func (l *RFC5424Logger) LogDebug(message string, meta map[string]string) {
 	l.writeLog(rfc5424.Debug, message, meta)
+}
+
+// GetLogs returns a copy of all captured logs
+func (l *RFC5424Logger) GetLogs() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	logsCopy := make([]string, len(l.logs))
+	copy(logsCopy, l.logs)
+	return logsCopy
+}
+
+// ClearLogs clears the in-memory log buffer
+func (l *RFC5424Logger) ClearLogs() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.logs = make([]string, 0)
 }
 
 // DefaultLogger is the global logger instance
@@ -151,5 +182,20 @@ func LogError(message string, meta map[string]string) {
 func LogDebug(message string, meta map[string]string) {
 	if DefaultLogger != nil {
 		DefaultLogger.LogDebug(message, meta)
+	}
+}
+
+// GetLogs returns logs from the default logger
+func GetLogs() []string {
+	if DefaultLogger != nil {
+		return DefaultLogger.GetLogs()
+	}
+	return []string{}
+}
+
+// ClearLogs clears logs from the default logger
+func ClearLogs() {
+	if DefaultLogger != nil {
+		DefaultLogger.ClearLogs()
 	}
 }

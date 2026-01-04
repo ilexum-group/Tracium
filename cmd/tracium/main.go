@@ -34,6 +34,9 @@ func main() {
 		collectDiskImages(&data)
 	}
 
+	// Collect logs before sending
+	data.Logs = utils.GetLogs()
+
 	// Send data and disk images to server
 	err := sender.SendData(cfg, data)
 	if err != nil {
