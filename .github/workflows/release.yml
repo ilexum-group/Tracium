@@ -1,13 +1,126 @@
 name: Release Build
 
 on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'version'
   release:
     types: [published]
 
 jobs:
+  check-version:
+    name: Check Version Change
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      create_release: ${{ steps.version.outputs.create_release }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 2
+
+    - name: Check version file
+      id: version
+      run: |
+        if [ -f version ]; then
+          VERSION=$(cat version | tr -d '\n\r')
+          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+          echo "create_release=true" >> $GITHUB_OUTPUT
+          echo "New version detected: v$VERSION"
+        else
+          echo "create_release=false" >> $GITHUB_OUTPUT
+          echo "No version file found"
+        fi
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: check-version
+    if: needs.check-version.outputs.create_release == 'true'
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      tag_name: ${{ needs.check-version.outputs.version }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        VERSION="${{ needs.check-version.outputs.version }}"
+        
+        # Get commits since last tag
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        if [ -z "$LAST_TAG" ]; then
+          COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges)
+        else
+          COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+        fi
+        
+        # Create release notes
+        cat << EOF > release_notes.md
+        ## Tracium ${VERSION}
+        
+        ### Changes
+        ${COMMITS}
+        
+        ### Installation
+        
+        Download the appropriate binary for your platform from the assets below.
+        
+        #### Linux/macOS
+        \`\`\`bash
+        # Extract the archive
+        tar -xzf tracium-linux-amd64-${VERSION}.tar.gz
+        
+        # Make executable
+        chmod +x tracium-linux-amd64
+        
+        # Run
+        ./tracium-linux-amd64
+        \`\`\`
+        
+        #### Windows
+        \`\`\`powershell
+        # Extract the ZIP file
+        Expand-Archive tracium-windows-amd64-${VERSION}.zip
+        
+        # Run
+        .\\tracium-windows-amd64.exe
+        \`\`\`
+        
+        ### Supported Platforms
+        - Linux (x86_64, ARM64, ARM)
+        - macOS (Intel, Apple Silicon)
+        - Windows (x86_64, ARM64)
+        - FreeBSD (x86_64)
+        - OpenBSD (x86_64)
+        EOF
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ needs.check-version.outputs.version }}
+        release_name: Release ${{ needs.check-version.outputs.version }}
+        body_path: release_notes.md
+        draft: false
+        prerelease: false
+
   build:
     name: Build for ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ubuntu-latest
+    needs: [check-version, create-release]
+    if: |
+      always() &&
+      (needs.create-release.result == 'success' || github.event_name == 'release')
     strategy:
       matrix:
         include:
@@ -82,10 +195,11 @@ jobs:
     - name: Create archive
       run: |
         cd build
+        TAG_NAME="${{ needs.create-release.outputs.tag_name || github.event.release.tag_name }}"
         if [ "${{ matrix.os }}" = "windows" ]; then
-          zip -r tracium-${{ matrix.os }}-${{ matrix.arch }}-${{ github.event.release.tag_name }}.zip tracium-${{ matrix.os }}-${{ matrix.arch }}.exe
+          zip -r tracium-${{ matrix.os }}-${{ matrix.arch }}-${TAG_NAME}.zip tracium-${{ matrix.os }}-${{ matrix.arch }}.exe
         else
-          tar -czf tracium-${{ matrix.os }}-${{ matrix.arch }}-${{ github.event.release.tag_name }}.tar.gz tracium-${{ matrix.os }}-${{ matrix.arch }}
+          tar -czf tracium-${{ matrix.os }}-${{ matrix.arch }}-${TAG_NAME}.tar.gz tracium-${{ matrix.os }}-${{ matrix.arch }}
         fi
 
     - name: Upload release asset
@@ -93,7 +207,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: build/tracium-${{ matrix.os }}-${{ matrix.arch }}-${{ github.event.release.tag_name }}.${{ matrix.os == 'windows' && 'zip' || 'tar.gz' }}
-        asset_name: tracium-${{ matrix.os }}-${{ matrix.arch }}-${{ github.event.release.tag_name }}.${{ matrix.os == 'windows' && 'zip' || 'tar.gz' }}
+        upload_url: ${{ needs.create-release.outputs.upload_url || github.event.release.upload_url }}
+        asset_path: build/tracium-${{ matrix.os }}-${{ matrix.arch }}-${{ needs.create-release.outputs.tag_name || github.event.release.tag_name }}.${{ matrix.os == 'windows' && 'zip' || 'tar.gz' }}
+        asset_name: tracium-${{ matrix.os }}-${{ matrix.arch }}-${{ needs.create-release.outputs.tag_name || github.event.release.tag_name }}.${{ matrix.os == 'windows' && 'zip' || 'tar.gz' }}
         asset_content_type: application/${{ matrix.os == 'windows' && 'zip' || 'gzip' }}
