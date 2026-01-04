@@ -1,3 +1,10 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  issues-exit-code: 1
+
 linters:
   enable:
     - bodyclose
@@ -13,7 +20,7 @@ linters:
     - gocyclo
     - gofmt
     - goimports
-    - revive         # Reemplazo de golint
+    - revive
     - gomnd
     - goprintffuncname
     - gosec
@@ -36,4 +43,3 @@ linters:
     - unused
     - varcheck
     - whitespace
-    
