@@ -49,6 +49,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}  # Only if absolutely necessary; otherwise omit
 
     - name: Set up Go
       uses: actions/setup-go@v6
