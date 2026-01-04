@@ -19,6 +19,33 @@ go.work
 
 # Build directory
 build/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Coverage files
+coverage.out
+*.cover
+
+# Temporary files
+*.tmp
+*.log
+
+# Local environment files
+.env
+.env.local
 dist/
 
 # Environment variables

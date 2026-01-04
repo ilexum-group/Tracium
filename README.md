@@ -162,8 +162,20 @@ make release
 Builds are generated in the `build/` directory with descriptive names like `tracium-linux-amd64`, `tracium-windows-amd64.exe`, etc.
 
 ### CI/CD Pipeline
-The project includes a GitHub Actions pipeline that automatically compiles for all platforms when a new release is created:
+The project includes comprehensive GitHub Actions pipelines for both continuous integration and release builds:
 
+#### Continuous Integration (CI)
+- **Trigger:** Push to main/master branch or Pull Request creation
+- **Checks Performed:**
+  - ✅ **Unit Tests**: Run all tests with coverage reporting
+  - ✅ **Build Verification**: Ensure code compiles successfully
+  - ✅ **Code Formatting**: Check Go code formatting with `gofmt`
+  - ✅ **Static Analysis**: Run `go vet` for code quality
+  - ✅ **Security Scan**: Gosec security vulnerability scanning
+  - ✅ **Linting**: Comprehensive linting with golangci-lint
+  - ✅ **Dependency Verification**: Validate module dependencies
+
+#### Release Pipeline
 - **Trigger:** Release creation on GitHub
 - **Platforms:** Linux, macOS, Windows, FreeBSD, OpenBSD
 - **Architectures:** amd64, arm64, arm (Linux)
@@ -173,7 +185,8 @@ To create a new release:
 1. Go to the "Releases" tab on GitHub
 2. Click "Create a new release"
 3. Tag the version (e.g., `v1.0.0`)
-4. The pipeline will run automatically and upload the binaries
+4. The CI pipeline will run automatically to validate code quality
+5. The release pipeline will build and upload binaries for all platforms
 
 ### Configuration
 1. Set the server URL:
@@ -296,9 +309,23 @@ Tracium implements RFC 5424 compliant syslog logging for forensic-grade audit tr
 ### Development
 1. Fork the repository
 2. Create feature branch: `git checkout -b feature/new-functionality`
-3. Commit changes: `git commit -am 'Add new functionality'`
-4. Push: `git push origin feature/new-functionality`
-5. Create Pull Request
+3. Make changes following the code standards
+4. **Run local validation**: `./validate.sh` (Linux/macOS)
+5. Run tests locally: `go test ./...`
+6. Ensure code builds: `go build ./cmd/tracium`
+7. Format code: `gofmt -w .`
+8. Commit changes: `git commit -am 'Add new functionality'`
+9. Push: `git push origin feature/new-functionality`
+10. Create Pull Request
+
+### Pull Request Requirements
+All pull requests must pass the CI/CD pipeline checks:
+- ✅ **Tests**: All tests must pass
+- ✅ **Build**: Code must compile successfully
+- ✅ **Formatting**: Code must be properly formatted with `gofmt`
+- ✅ **Linting**: Must pass golangci-lint checks
+- ✅ **Security**: Must pass security scans
+- ✅ **Coverage**: Test coverage must be maintained
 
 ### Code Standards
 - Follow [Effective Go](https://golang.org/doc/effective_go.html)

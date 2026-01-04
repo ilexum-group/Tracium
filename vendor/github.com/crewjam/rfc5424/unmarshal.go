@@ -89,7 +89,6 @@ func (m *Message) UnmarshalBinary(inputBuffer []byte) error {
 // TIME-SECFRAC    = "." 1*6DIGIT
 // TIME-OFFSET     = "Z" / TIME-NUMOFFSET
 // TIME-NUMOFFSET  = ("+" / "-") TIME-HOUR ":" TIME-MINUTE
-//
 func (m *Message) readHeader(r io.RuneScanner) error {
 	if err := m.readPriority(r); err != nil {
 		return err
@@ -185,7 +184,9 @@ func (m *Message) readVersion(r io.RuneScanner) error {
 // DATE-FULLYEAR   = 4DIGIT
 // DATE-MONTH      = 2DIGIT  ; 01-12
 // DATE-MDAY       = 2DIGIT  ; 01-28, 01-29, 01-30, 01-31 based on
-//                           ; month/year
+//
+//	; month/year
+//
 // FULL-TIME       = PARTIAL-TIME TIME-OFFSET
 // PARTIAL-TIME    = TIME-HOUR ":" TIME-MINUTE ":" TIME-SECOND
 // [TIME-SECFRAC]
@@ -438,8 +439,8 @@ func readWord(r io.RuneScanner) (string, error) {
 	}
 }
 
-func copyFrom(in []byte ) []byte {
-	out := make([]byte,len(in))
+func copyFrom(in []byte) []byte {
+	out := make([]byte, len(in))
 	copy(out, in)
 	return out
 }
