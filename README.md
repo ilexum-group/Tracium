@@ -125,7 +125,7 @@ go mod vendor
 ### Initial Setup
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/tracium.git
+git clone https://github.com/ilexum-group/tracium.git
 cd tracium
 
 # Initialize modules and dependencies
