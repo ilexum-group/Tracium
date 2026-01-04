@@ -5,7 +5,8 @@ run:
 
 output:
   formats:
-    text: colored-line-number
+    text:
+      colored-line-number: true
   print-issued-lines: true
   print-linter-name: true
   uniq-by-line: true
