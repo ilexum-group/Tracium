@@ -24,36 +24,34 @@ func TestCollectForensicsData(t *testing.T) {
 
 	// Forensics collection may or may not find data depending on the system
 	// Just verify it doesn't panic and returns a valid structure
-	t.Logf("Browser history entries: %d", len(data.BrowserHistory))
-	t.Logf("Cookies entries: %d", len(data.Cookies))
+	t.Logf("Browser DB files: %d", len(data.BrowserDBFiles))
 	t.Logf("Recent files: %d", len(data.RecentFiles))
 	t.Logf("Command history: %d", len(data.CommandHistory))
-	t.Logf("Downloads: %d", len(data.Downloads))
 	t.Logf("ARP cache entries: %d", len(data.NetworkHistory.ARPCache))
 	t.Logf("DNS cache entries: %d", len(data.NetworkHistory.DNSCache))
 	t.Logf("Collection errors: %d", len(data.CollectionErrors))
 }
 
-// TestBrowserHistoryCollection tests browser history collection
-func TestBrowserHistoryCollection(t *testing.T) {
-	// This test verifies that browser history collection doesn't panic
+// TestBrowserDBFileCollection tests browser DB file collection
+func TestBrowserDBFileCollection(t *testing.T) {
+	// This test verifies that browser DB file collection doesn't panic
 	// Actual data depends on the system and whether browsers are installed
 
 	defer func() {
 		if r := recover(); r != nil {
-			t.Errorf("Browser history collection panicked: %v", r)
+			t.Errorf("Browser DB collection panicked: %v", r)
 		}
 	}()
 
 	data := forensics.CollectForensicsData()
 
-	// Verify browser history entries have correct fields
-	for _, entry := range data.BrowserHistory {
-		if entry.Browser == "" {
+	// Verify browser DB files have correct fields
+	for _, file := range data.BrowserDBFiles {
+		if file.Browser == "" {
 			t.Error("Browser field should not be empty")
 		}
-		if entry.URL == "" {
-			t.Error("URL field should not be empty")
+		if file.Path == "" {
+			t.Error("Path field should not be empty")
 		}
 	}
 }
@@ -150,19 +148,6 @@ func TestRecentFilesCollection(t *testing.T) {
 	}
 }
 
-// TestDownloadsCollection tests downloads collection
-func TestDownloadsCollection(t *testing.T) {
-	data := forensics.CollectForensicsData()
-
-	// Verify downloads structure
-	for _, download := range data.Downloads {
-		if download.Browser == "" {
-			t.Error("Browser field should not be empty")
-		}
-		// Other fields may be empty depending on the download state
-	}
-}
-
 // TestForensicsDataIntegrity tests that forensics data maintains integrity
 func TestForensicsDataIntegrity(t *testing.T) {
 	// Collect data twice to ensure consistency
@@ -172,16 +157,12 @@ func TestForensicsDataIntegrity(t *testing.T) {
 	// The number of entries should be similar (allowing for small differences due to timing)
 	// This is a sanity check, not a strict equality test
 
-	if len(data1.BrowserHistory) > 0 && len(data2.BrowserHistory) == 0 {
-		t.Error("Browser history collection is inconsistent")
-	}
-
 	if len(data1.CommandHistory) > 0 && len(data2.CommandHistory) == 0 {
 		t.Error("Command history collection is inconsistent")
 	}
 
-	t.Logf("First collection: %d browser history, %d commands", len(data1.BrowserHistory), len(data1.CommandHistory))
-	t.Logf("Second collection: %d browser history, %d commands", len(data2.BrowserHistory), len(data2.CommandHistory))
+	t.Logf("First collection: %d browser DBs, %d commands", len(data1.BrowserDBFiles), len(data1.CommandHistory))
+	t.Logf("Second collection: %d browser DBs, %d commands", len(data2.BrowserDBFiles), len(data2.CommandHistory))
 }
 
 // TestForensicsErrorHandling tests that forensics collection handles errors gracefully

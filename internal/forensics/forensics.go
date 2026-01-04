@@ -2,9 +2,9 @@
 package forensics
 
 import (
-	"database/sql"
-	"encoding/json"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,8 +14,6 @@ import (
 
 	"github.com/tracium/internal/models"
 	"github.com/tracium/internal/utils"
-
-	_ "github.com/mattn/go-sqlite3" // SQLite driver for browser databases
 )
 
 // CollectForensicsData collects all forensic artifacts
@@ -24,11 +22,8 @@ func CollectForensicsData() models.ForensicsData {
 		CollectionErrors: make([]string, 0),
 	}
 
-	// Collect browser history
-	forensics.BrowserHistory = collectBrowserHistory(&forensics.CollectionErrors)
-
-	// Collect cookies
-	forensics.Cookies = collectCookies(&forensics.CollectionErrors)
+	// Collect browser database files (server will query)
+	forensics.BrowserDBFiles = collectBrowserDBFiles(&forensics.CollectionErrors)
 
 	// Collect recent files
 	forensics.RecentFiles = collectRecentFiles(&forensics.CollectionErrors)
@@ -36,272 +31,30 @@ func CollectForensicsData() models.ForensicsData {
 	// Collect command history
 	forensics.CommandHistory = collectCommandHistory(&forensics.CollectionErrors)
 
-	// Collect downloads
-	forensics.Downloads = collectDownloads(&forensics.CollectionErrors)
-
 	// Collect network history
 	forensics.NetworkHistory = collectNetworkHistory(&forensics.CollectionErrors)
 
 	return forensics
 }
 
-// collectBrowserHistory collects browser history from Chrome, Firefox, Edge
-func collectBrowserHistory(errors *[]string) []models.BrowserHistoryEntry {
-	history := make([]models.BrowserHistoryEntry, 0)
+// collectBrowserDBFiles copies browser database files so the server can query them
+func collectBrowserDBFiles(errors *[]string) []models.ForensicFile {
+	files := make([]models.ForensicFile, 0)
 
 	// Chrome
-	chromeHistory := collectChromeHistory()
-	history = append(history, chromeHistory...)
+	files = append(files, copyChromeDBs(errors)...)
 
 	// Firefox
-	firefoxHistory := collectFirefoxHistory()
-	history = append(history, firefoxHistory...)
+	files = append(files, copyFirefoxDBs(errors)...)
 
-	// Edge
-	edgeHistory := collectEdgeHistory()
-	history = append(history, edgeHistory...)
+	// Edge (Windows only)
+	files = append(files, copyEdgeDBs(errors)...)
 
-	utils.LogInfo("Browser history collected", map[string]string{
-		"entries": fmt.Sprintf("%d", len(history)),
+	utils.LogInfo("Browser DBs collected", map[string]string{
+		"count": fmt.Sprintf("%d", len(files)),
 	})
 
-	return history
-}
-
-// collectChromeHistory collects Chrome browser history
-func collectChromeHistory() []models.BrowserHistoryEntry {
-	entries := make([]models.BrowserHistoryEntry, 0)
-
-	var historyPath string
-	switch runtime.GOOS {
-	case "windows":
-		historyPath = filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Chrome", "User Data", "Default", "History")
-	case "darwin":
-		homeDir, _ := os.UserHomeDir()
-		historyPath = filepath.Join(homeDir, "Library", "Application Support", "Google", "Chrome", "Default", "History")
-	case "linux":
-		homeDir, _ := os.UserHomeDir()
-		historyPath = filepath.Join(homeDir, ".config", "google-chrome", "Default", "History")
-	default:
-		return entries
-	}
-
-	// Copy database to temp location (Chrome locks the file)
-	tempPath := filepath.Join(os.TempDir(), fmt.Sprintf("chrome_history_%d.db", time.Now().Unix()))
-	if err := copyFile(historyPath, tempPath); err != nil {
-		utils.LogDebug("Chrome history not accessible", map[string]string{"error": err.Error()})
-		return entries
-	}
-	defer func() {
-		if err := os.Remove(tempPath); err != nil {
-			utils.LogDebug("Failed to remove temp Chrome history", map[string]string{"error": err.Error()})
-		}
-	}()
-
-	db, err := sql.Open("sqlite3", tempPath)
-	if err != nil {
-		return entries
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			utils.LogDebug("Failed to close Chrome history db", map[string]string{"error": err.Error()})
-		}
-	}()
-
-	rows, err := db.Query("SELECT url, title, visit_count, last_visit_time, typed_count FROM urls ORDER BY last_visit_time DESC LIMIT 1000")
-	if err != nil {
-		return entries
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			utils.LogDebug("Failed to close Chrome history rows", map[string]string{"error": err.Error()})
-		}
-	}()
-
-	for rows.Next() {
-		var url, title string
-		var visitCount, typedCount int
-		var lastVisitTime int64
-
-		if err := rows.Scan(&url, &title, &visitCount, &lastVisitTime, &typedCount); err != nil {
-			continue
-		}
-
-		// Chrome stores time as microseconds since 1601-01-01, convert to Unix
-		unixTime := chromeTimeToUnix(lastVisitTime)
-
-		entries = append(entries, models.BrowserHistoryEntry{
-			Browser:       "chrome",
-			URL:           url,
-			Title:         title,
-			VisitCount:    visitCount,
-			LastVisitTime: unixTime,
-			Typed:         typedCount > 0,
-		})
-	}
-
-	return entries
-}
-
-// collectFirefoxHistory collects Firefox browser history
-func collectFirefoxHistory() []models.BrowserHistoryEntry {
-	entries := make([]models.BrowserHistoryEntry, 0)
-
-	var profilesDir string
-	switch runtime.GOOS {
-	case "windows":
-		profilesDir = filepath.Join(os.Getenv("APPDATA"), "Mozilla", "Firefox", "Profiles")
-	case "darwin":
-		homeDir, _ := os.UserHomeDir()
-		profilesDir = filepath.Join(homeDir, "Library", "Application Support", "Firefox", "Profiles")
-	case "linux":
-		homeDir, _ := os.UserHomeDir()
-		profilesDir = filepath.Join(homeDir, ".mozilla", "firefox")
-	default:
-		return entries
-	}
-
-	// Find profile directories
-	profiles, err := filepath.Glob(filepath.Join(profilesDir, "*.default*"))
-	if err != nil || len(profiles) == 0 {
-		return entries
-	}
-
-	for _, profile := range profiles {
-		placesPath := filepath.Join(profile, "places.sqlite")
-
-		// Copy to temp
-		tempPath := filepath.Join(os.TempDir(), fmt.Sprintf("firefox_places_%d.db", time.Now().Unix()))
-		if err := copyFile(placesPath, tempPath); err != nil {
-			continue
-		}
-		defer func(path string) {
-			if err := os.Remove(path); err != nil {
-				utils.LogDebug("Failed to remove temp Firefox places", map[string]string{"error": err.Error()})
-			}
-		}(tempPath)
-
-		db, err := sql.Open("sqlite3", tempPath)
-		if err != nil {
-			continue
-		}
-
-		rows, err := db.Query(`
-			SELECT url, title, visit_count, last_visit_date 
-			FROM moz_places 
-			WHERE last_visit_date IS NOT NULL 
-			ORDER BY last_visit_date DESC 
-			LIMIT 1000
-		`)
-		if err != nil {
-			_ = db.Close()
-			continue
-		}
-
-		for rows.Next() {
-			var url, title string
-			var visitCount int
-			var lastVisitDate int64
-
-			if err := rows.Scan(&url, &title, &visitCount, &lastVisitDate); err != nil {
-				continue
-			}
-
-			// Firefox stores time as microseconds since Unix epoch
-			unixTime := lastVisitDate / 1000000
-
-			entries = append(entries, models.BrowserHistoryEntry{
-				Browser:       "firefox",
-				URL:           url,
-				Title:         title,
-				VisitCount:    visitCount,
-				LastVisitTime: unixTime,
-			})
-		}
-
-		_ = rows.Close()
-		_ = db.Close()
-	}
-
-	return entries
-}
-
-// collectEdgeHistory collects Edge browser history
-func collectEdgeHistory() []models.BrowserHistoryEntry {
-	entries := make([]models.BrowserHistoryEntry, 0)
-
-	if runtime.GOOS != "windows" {
-		return entries
-	}
-
-	historyPath := filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Edge", "User Data", "Default", "History")
-
-	// Copy to temp
-	tempPath := filepath.Join(os.TempDir(), fmt.Sprintf("edge_history_%d.db", time.Now().Unix()))
-	if err := copyFile(historyPath, tempPath); err != nil {
-		return entries
-	}
-	defer func() {
-		if err := os.Remove(tempPath); err != nil {
-			utils.LogDebug("Failed to remove temp Edge history", map[string]string{"error": err.Error()})
-		}
-	}()
-
-	db, err := sql.Open("sqlite3", tempPath)
-	if err != nil {
-		return entries
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			utils.LogDebug("Failed to close Edge history db", map[string]string{"error": err.Error()})
-		}
-	}()
-
-	rows, err := db.Query("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 1000")
-	if err != nil {
-		return entries
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			utils.LogDebug("Failed to close Edge history rows", map[string]string{"error": err.Error()})
-		}
-	}()
-
-	for rows.Next() {
-		var url, title string
-		var visitCount int
-		var lastVisitTime int64
-
-		if err := rows.Scan(&url, &title, &visitCount, &lastVisitTime); err != nil {
-			continue
-		}
-
-		unixTime := chromeTimeToUnix(lastVisitTime)
-
-		entries = append(entries, models.BrowserHistoryEntry{
-			Browser:       "edge",
-			URL:           url,
-			Title:         title,
-			VisitCount:    visitCount,
-			LastVisitTime: unixTime,
-		})
-	}
-
-	return entries
-}
-
-// collectCookies collects browser cookies
-func collectCookies(errors *[]string) []models.CookieEntry {
-	cookies := make([]models.CookieEntry, 0)
-
-	// Note: Cookie values are often encrypted, especially in Chrome
-	// This collects metadata but may not decrypt values
-
-	utils.LogInfo("Cookie collection completed", map[string]string{
-		"entries": fmt.Sprintf("%d", len(cookies)),
-	})
-
-	return cookies
+	return files
 }
 
 // collectRecentFiles collects recently accessed files
@@ -508,194 +261,6 @@ func collectZshHistory() []models.CommandEntry {
 	return commands
 }
 
-// collectDownloads collects download history
-func collectDownloads(errors *[]string) []models.DownloadEntry {
-	downloads := make([]models.DownloadEntry, 0)
-
-	// Collect from Chrome
-	downloads = append(downloads, collectChromeDownloads()...)
-
-	// Collect from Firefox
-	downloads = append(downloads, collectFirefoxDownloads()...)
-
-	utils.LogInfo("Downloads collected", map[string]string{
-		"entries": fmt.Sprintf("%d", len(downloads)),
-	})
-
-	return downloads
-}
-
-// collectChromeDownloads collects Chrome download history
-func collectChromeDownloads() []models.DownloadEntry {
-	downloads := make([]models.DownloadEntry, 0)
-
-	var historyPath string
-	switch runtime.GOOS {
-	case "windows":
-		historyPath = filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Chrome", "User Data", "Default", "History")
-	case "darwin":
-		homeDir, _ := os.UserHomeDir()
-		historyPath = filepath.Join(homeDir, "Library", "Application Support", "Google", "Chrome", "Default", "History")
-	case "linux":
-		homeDir, _ := os.UserHomeDir()
-		historyPath = filepath.Join(homeDir, ".config", "google-chrome", "Default", "History")
-	default:
-		return downloads
-	}
-
-	tempPath := filepath.Join(os.TempDir(), fmt.Sprintf("chrome_downloads_%d.db", time.Now().Unix()))
-	if err := copyFile(historyPath, tempPath); err != nil {
-		return downloads
-	}
-	defer func() {
-		if err := os.Remove(tempPath); err != nil {
-			utils.LogDebug("Failed to remove temp Chrome downloads", map[string]string{"error": err.Error()})
-		}
-	}()
-
-	db, err := sql.Open("sqlite3", tempPath)
-	if err != nil {
-		return downloads
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			utils.LogDebug("Failed to close Chrome downloads db", map[string]string{"error": err.Error()})
-		}
-	}()
-
-	rows, err := db.Query(`
-		SELECT target_path, tab_url, start_time, end_time, total_bytes, state, danger_type, mime_type 
-		FROM downloads 
-		ORDER BY start_time DESC 
-		LIMIT 500
-	`)
-	if err != nil {
-		return downloads
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			utils.LogDebug("Failed to close Chrome downloads rows", map[string]string{"error": err.Error()})
-		}
-	}()
-
-	for rows.Next() {
-		var targetPath, tabURL, dangerType, mimeType string
-		var startTime, endTime, totalBytes int64
-		var state int
-
-		if err := rows.Scan(&targetPath, &tabURL, &startTime, &endTime, &totalBytes, &state, &dangerType, &mimeType); err != nil {
-			continue
-		}
-
-		stateStr := "unknown"
-		switch state {
-		case 0:
-			stateStr = "in_progress"
-		case 1:
-			stateStr = "complete"
-		case 2:
-			stateStr = "cancelled"
-		case 3:
-			stateStr = "interrupted"
-		}
-
-		downloads = append(downloads, models.DownloadEntry{
-			Browser:    "chrome",
-			FilePath:   targetPath,
-			URL:        tabURL,
-			StartTime:  chromeTimeToUnix(startTime),
-			EndTime:    chromeTimeToUnix(endTime),
-			BytesTotal: totalBytes,
-			State:      stateStr,
-			DangerType: dangerType,
-			MimeType:   mimeType,
-		})
-	}
-
-	return downloads
-}
-
-// collectFirefoxDownloads collects Firefox download history
-func collectFirefoxDownloads() []models.DownloadEntry {
-	downloads := make([]models.DownloadEntry, 0)
-
-	var profilesDir string
-	switch runtime.GOOS {
-	case "windows":
-		profilesDir = filepath.Join(os.Getenv("APPDATA"), "Mozilla", "Firefox", "Profiles")
-	case "darwin":
-		homeDir, _ := os.UserHomeDir()
-		profilesDir = filepath.Join(homeDir, "Library", "Application Support", "Firefox", "Profiles")
-	case "linux":
-		homeDir, _ := os.UserHomeDir()
-		profilesDir = filepath.Join(homeDir, ".mozilla", "firefox")
-	default:
-		return downloads
-	}
-
-	profiles, err := filepath.Glob(filepath.Join(profilesDir, "*.default*"))
-	if err != nil || len(profiles) == 0 {
-		return downloads
-	}
-
-	for _, profile := range profiles {
-		placesPath := filepath.Join(profile, "places.sqlite")
-
-		tempPath := filepath.Join(os.TempDir(), fmt.Sprintf("firefox_downloads_%d.db", time.Now().Unix()))
-		if err := copyFile(placesPath, tempPath); err != nil {
-			continue
-		}
-		defer func(path string) {
-			if err := os.Remove(path); err != nil {
-				utils.LogDebug("Failed to remove temp Firefox downloads", map[string]string{"error": err.Error()})
-			}
-		}(tempPath)
-
-		db, err := sql.Open("sqlite3", tempPath)
-		if err != nil {
-			continue
-		}
-
-		rows, err := db.Query(`
-			SELECT content FROM moz_annos 
-			WHERE anno_attribute_id IN (SELECT id FROM moz_anno_attributes WHERE name = 'downloads/metaData')
-			LIMIT 500
-		`)
-		if err != nil {
-			_ = db.Close()
-			continue
-		}
-
-		for rows.Next() {
-			var content string
-			if err := rows.Scan(&content); err != nil {
-				continue
-			}
-
-			// Parse JSON metadata
-			var metadata map[string]interface{}
-			if err := json.Unmarshal([]byte(content), &metadata); err != nil {
-				continue
-			}
-
-			filePath, _ := metadata["targetPath"].(string)
-			url, _ := metadata["source"].(string)
-
-			downloads = append(downloads, models.DownloadEntry{
-				Browser:  "firefox",
-				FilePath: filePath,
-				URL:      url,
-				State:    "unknown",
-			})
-		}
-
-		_ = rows.Close()
-		_ = db.Close()
-	}
-
-	return downloads
-}
-
 // collectNetworkHistory collects network connection history
 func collectNetworkHistory(errors *[]string) models.NetworkHistoryData {
 	networkHistory := models.NetworkHistoryData{
@@ -841,7 +406,161 @@ func collectDNSCache() []models.DNSEntry {
 	return entries
 }
 
+// copyChromeDBs copies Chrome database files (History, Cookies) without querying them
+func copyChromeDBs(errors *[]string) []models.ForensicFile {
+	artifacts := make([]models.ForensicFile, 0)
+
+	var baseDir string
+	switch runtime.GOOS {
+	case "windows":
+		baseDir = filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Chrome", "User Data", "Default")
+	case "darwin":
+		homeDir, _ := os.UserHomeDir()
+		baseDir = filepath.Join(homeDir, "Library", "Application Support", "Google", "Chrome", "Default")
+	case "linux":
+		homeDir, _ := os.UserHomeDir()
+		baseDir = filepath.Join(homeDir, ".config", "google-chrome", "Default")
+	default:
+		return artifacts
+	}
+
+	files := []string{"History", "Cookies"}
+	for _, name := range files {
+		src := filepath.Join(baseDir, name)
+		artifact, err := copyArtifact(src, fmt.Sprintf("chrome_%s", strings.ToLower(name)), "chrome")
+		if err != nil {
+			if errors != nil {
+				*errors = append(*errors, err.Error())
+			}
+			continue
+		}
+		if artifact != nil {
+			artifacts = append(artifacts, *artifact)
+		}
+	}
+
+	return artifacts
+}
+
+// copyEdgeDBs copies Edge database files without querying them (Windows only)
+func copyEdgeDBs(errors *[]string) []models.ForensicFile {
+	artifacts := make([]models.ForensicFile, 0)
+	if runtime.GOOS != "windows" {
+		return artifacts
+	}
+
+	baseDir := filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Edge", "User Data", "Default")
+	files := []string{"History", "Cookies"}
+	for _, name := range files {
+		src := filepath.Join(baseDir, name)
+		artifact, err := copyArtifact(src, fmt.Sprintf("edge_%s", strings.ToLower(name)), "edge")
+		if err != nil {
+			if errors != nil {
+				*errors = append(*errors, err.Error())
+			}
+			continue
+		}
+		if artifact != nil {
+			artifacts = append(artifacts, *artifact)
+		}
+	}
+
+	return artifacts
+}
+
+// copyFirefoxDBs copies Firefox database files (places.sqlite, cookies.sqlite)
+func copyFirefoxDBs(errors *[]string) []models.ForensicFile {
+	artifacts := make([]models.ForensicFile, 0)
+
+	var profilesDir string
+	switch runtime.GOOS {
+	case "windows":
+		profilesDir = filepath.Join(os.Getenv("APPDATA"), "Mozilla", "Firefox", "Profiles")
+	case "darwin":
+		homeDir, _ := os.UserHomeDir()
+		profilesDir = filepath.Join(homeDir, "Library", "Application Support", "Firefox", "Profiles")
+	case "linux":
+		homeDir, _ := os.UserHomeDir()
+		profilesDir = filepath.Join(homeDir, ".mozilla", "firefox")
+	default:
+		return artifacts
+	}
+
+	profiles, err := filepath.Glob(filepath.Join(profilesDir, "*.default*"))
+	if err != nil || len(profiles) == 0 {
+		return artifacts
+	}
+
+	for _, profile := range profiles {
+		files := []string{"places.sqlite", "cookies.sqlite"}
+		for _, name := range files {
+			src := filepath.Join(profile, name)
+			artifact, err := copyArtifact(src, fmt.Sprintf("firefox_%s", strings.TrimSuffix(name, ".sqlite")), "firefox")
+			if err != nil {
+				if errors != nil {
+					*errors = append(*errors, err.Error())
+				}
+				continue
+			}
+			if artifact != nil {
+				artifacts = append(artifacts, *artifact)
+			}
+		}
+	}
+
+	return artifacts
+}
+
+// copyArtifact copies a file if it exists and returns its metadata
+func copyArtifact(src, prefix, browser string) (*models.ForensicFile, error) {
+	if _, err := os.Stat(src); err != nil {
+		return nil, fmt.Errorf("artifact missing: %s", src)
+	}
+
+	dest := filepath.Join(os.TempDir(), fmt.Sprintf("%s_%d.db", prefix, time.Now().UnixNano()))
+	size, hash, err := copyFileWithHash(src, dest)
+	if err != nil {
+		return nil, fmt.Errorf("copy failed for %s: %w", src, err)
+	}
+
+	return &models.ForensicFile{
+		Name:     filepath.Base(src),
+		Path:     dest,
+		Size:     size,
+		Hash:     hash,
+		Category: "browser_db",
+		Browser:  browser,
+	}, nil
+}
+
 // Helper functions
+
+// copyFileWithHash copies a file to dst computing SHA-256 hash and returns size and hash
+func copyFileWithHash(src, dst string) (int64, string, error) {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return 0, "", err
+	}
+	defer func() {
+		_ = sourceFile.Close()
+	}()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return 0, "", err
+	}
+	defer func() {
+		_ = destFile.Close()
+	}()
+
+	hasher := sha256.New()
+	written, err := io.Copy(io.MultiWriter(destFile, hasher), sourceFile)
+	if err != nil {
+		return 0, "", err
+	}
+
+	return written, fmt.Sprintf("%x", hasher.Sum(nil)), nil
+}
 
 // copyFile copies a file from src to dst
 func copyFile(src, dst string) error {
