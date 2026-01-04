@@ -1,3 +1,4 @@
+// Package models defines data structures for system information collected by the agent
 package models
 
 // SystemData represents the complete data collected by the agent

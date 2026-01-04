@@ -110,7 +110,7 @@ func (l *RFC5424Logger) LogDebug(message string, meta map[string]string) {
 	l.writeLog(rfc5424.Debug, message, meta)
 }
 
-// Global logger instance
+// DefaultLogger is the global logger instance
 var DefaultLogger *RFC5424Logger
 
 // InitDefaultLogger initializes the global logger instance

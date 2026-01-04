@@ -1,3 +1,4 @@
+// Package collector provides functions to collect system, hardware, network, and security information.
 package collector
 
 import (

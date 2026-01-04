@@ -27,7 +27,10 @@ func TestRFC5424Logger(t *testing.T) {
 	utils.LogDebug("Test debug message", map[string]string{"test": "true", "level": "debug"})
 
 	// Restore stdout
-	w.Close()
+	err = w.Close()
+	if err != nil {
+		t.Fatalf("Failed to close pipe writer: %v", err)
+	}
 	os.Stdout = oldStdout
 
 	// Read captured output
@@ -67,7 +70,10 @@ func TestLoggerWithoutMetadata(t *testing.T) {
 	utils.LogInfo("Simple message", nil)
 
 	// Restore stdout
-	w.Close()
+	err = w.Close()
+	if err != nil {
+		t.Fatalf("Failed to close pipe writer: %v", err)
+	}
 	os.Stdout = oldStdout
 
 	// Read output
