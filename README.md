@@ -1,82 +1,39 @@
 # Tracium - Forensic Analysis and Monitoring Agent
 
-## Overview
+## What It Does
 
-Tracium is an advanced analysis and monitoring agent designed for PC and server environments. Developed in Go, this agent specializes in collecting technical evidence, digital forensic analysis, and continuous security monitoring.
+The Tracium binary collects and sends:
 
-## Main Objectives
+1. **System Information** - OS, hostname, architecture, uptime, users
+2. **Hardware Information** - CPU model/cores, memory (total/used), disk partitions
+3. **Network Information** - Active interfaces, IP addresses, MAC addresses, listening ports
+4. **Security Information** - Running processes, active services
+5. **Disk Imaging** - Creates forensic copies of disks and sends them to the remote server
 
-- **Computer Forensics**: Systematic collection of digital evidence for legal investigations
-- **Forensic Analysis**: Real-time system state capture for post-incident analysis
-- **Security Monitoring**: Continuous monitoring of processes, services, and system behaviors
-- **Technical Evidence Collection**: Complete documentation of system state for audits and compliance
-
-## System Architecture
-
-```
-┌─────────────────┐    HTTP(S)   ┌─────────────────┐
-│   Target        │─────────────►│   Central       │
-│   System        │              │   Server        │
-│                 │              │                 │
-│ • Tracium Agent │              │ • REST API      │
-│ • Collector     │              │ • Database      │
-│ • Transmitter   │              │ • Dashboard     │
-└─────────────────┘              └─────────────────┘
-```
-
-## Prerequisites
-
-- Go 1.25 or higher
-- Make (to use the cross-platform Makefile)
-- Git (for version control)
+Then sends all collected data and disk images to a remote server via HTTPS.
 
 ## Quick Start
 
 ```bash
-# Clone the repository
 git clone https://github.com/ilexum-group/tracium.git
 cd tracium
-
-# Build for current platform
 make build
+./build/tracium
 ```
 
 ## Configuration
 
 ```bash
 export TRACIUM_SERVER_URL="https://api.tracium.com/v1/data"
-export TRACIUM_AGENT_TOKEN="your-static-token-here"
+export TRACIUM_AGENT_TOKEN="your-token"
 ```
 
-## Project Structure
+## Documentation
 
-```
-tracium/
-├── cmd/tracium/           # Main entry point
-├── internal/              # Internal components
-├── tests/                 # Project tests
-├── go.mod                 # Module definition
-└── README.md              # This file
-```
-
-For detailed information, see:
-- [cmd/tracium/README.md](cmd/tracium/README.md) - Building and Installation
-- [internal/README.md](internal/README.md) - Components and Features
-- [tests/README.md](tests/README.md) - Testing
-
-## Server Communication
-
-**Protocol:** HTTP/HTTPS with Bearer Token authentication
-
-**Data Format:** Structured JSON
-
-## Dependencies
-
-- [crewjam/rfc5424](https://github.com/crewjam/rfc5424) - RFC 5424 syslog message format
-
-## License
-
-See LICENSE for details.
+- **[cmd/tracium/README.md](cmd/tracium/README.md)** - Building & running
+- **[internal/README.md](internal/README.md)** - Technical details
+- **[tests/README.md](tests/README.md)** - Testing
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Data transmission model, logging system, sequence diagrams
 - **Reviewers**: Automatically assigned to maintainers
 
 #### GitHub Actions Updates
@@ -200,18 +157,6 @@ Tracium implements RFC 5424 compliant syslog logging for forensic-grade audit tr
 - Automated forensic documentation
 
 ## Future Enhancements
-
-### Advanced Modules
-- **Traffic Capture**: Wireshark/tshark integration
-- **Memory Analysis**: Volatility framework integration
-- **Malware Detection**: YARA rules engine
-- **Log Analysis**: System log parsing and correlation
-
-### Integrations
-- **SIEM**: Splunk, ELK Stack, QRadar
-- **SOAR**: Response automation
-- **Cloud**: Azure Sentinel, AWS GuardDuty
-- **Forensic**: Autopsy, EnCase integration
 
 ### Additional Features
 - **Daemon Mode**: Continuous execution with configurable intervals

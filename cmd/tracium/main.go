@@ -2,10 +2,12 @@
 package main
 
 import (
+	"os"
 	"time"
 
 	"github.com/tracium/internal/collector"
 	"github.com/tracium/internal/config"
+	"github.com/tracium/internal/diskimaging"
 	"github.com/tracium/internal/models"
 	"github.com/tracium/internal/sender"
 	"github.com/tracium/internal/utils"
@@ -25,9 +27,14 @@ func main() {
 
 	// Collect system information
 	data := collectData()
-	utils.LogInfo("Data collection completed", map[string]string{"data_points": "4"}) // system, hardware, network, security
+	utils.LogInfo("Data collection completed", map[string]string{"data_points": "5"}) // system, hardware, network, security, disk images
 
-	// Send data to server
+	// Create disk images (optional based on environment variable)
+	if os.Getenv("TRACIUM_ENABLE_DISK_IMAGING") == "true" {
+		collectDiskImages(&data)
+	}
+
+	// Send data and disk images to server
 	err := sender.SendData(cfg, data)
 	if err != nil {
 		utils.LogError("Failed to send data", map[string]string{"error": err.Error()})
@@ -55,4 +62,35 @@ func collectData() models.SystemData {
 	data.Security = collector.CollectSecurityInfo()
 
 	return data
+}
+
+func collectDiskImages(data *models.SystemData) {
+	utils.LogInfo("Starting disk imaging process", map[string]string{})
+
+	// Get temporary directory for disk images
+	imageOutputDir := os.TempDir()
+	if customDir := os.Getenv("TRACIUM_IMAGE_OUTPUT_DIR"); customDir != "" {
+		imageOutputDir = customDir
+	}
+
+	// For now, create image of root disk on Linux/macOS or system drive on Windows
+	// In a real implementation, enumerate all available disks
+	diskPath := "/"
+	if os.Getenv("TRACIUM_DISK_PATH") != "" {
+		diskPath = os.Getenv("TRACIUM_DISK_PATH")
+	}
+
+	// Attempt to create disk image
+	diskImage, err := diskimaging.CreateDiskImage(diskPath, imageOutputDir)
+	if err != nil {
+		utils.LogError("Failed to create disk image", map[string]string{"disk": diskPath, "error": err.Error()})
+		return
+	}
+
+	data.DiskImages = append(data.DiskImages, *diskImage)
+	utils.LogInfo("Disk image created successfully", map[string]string{
+		"disk":  diskPath,
+		"image": diskImage.ImagePath,
+		"hash":  diskImage.ImageHash,
+	})
 }

@@ -3,11 +3,12 @@ package models
 
 // SystemData represents the complete data collected by the agent
 type SystemData struct {
-	Timestamp int64        `json:"timestamp"`
-	System    SystemInfo   `json:"system"`
-	Hardware  HardwareInfo `json:"hardware"`
-	Network   NetworkInfo  `json:"network"`
-	Security  SecurityInfo `json:"security"`
+	Timestamp  int64        `json:"timestamp"`
+	System     SystemInfo   `json:"system"`
+	Hardware   HardwareInfo `json:"hardware"`
+	Network    NetworkInfo  `json:"network"`
+	Security   SecurityInfo `json:"security"`
+	DiskImages []DiskImage  `json:"disk_images"`
 }
 
 // SystemInfo holds basic system information
@@ -78,5 +79,16 @@ type ProcessInfo struct {
 type ServiceInfo struct {
 	Name        string `json:"name"`
 	Status      string `json:"status"`
+	Description string `json:"description"`
+}
+
+// DiskImage holds disk imaging information
+type DiskImage struct {
+	DiskPath    string `json:"disk_path"`
+	ImagePath   string `json:"image_path"`
+	ImageHash   string `json:"image_hash"`
+	ImageSize   uint64 `json:"image_size"`
+	Status      string `json:"status"`
+	Timestamp   int64  `json:"timestamp"`
 	Description string `json:"description"`
 }

@@ -121,3 +121,46 @@ Dependencies are vendored in the `vendor/` directory for reproducible builds.
 go mod tidy
 go mod vendor
 ```
+
+## Configuration
+
+Tracium is configured through environment variables:
+
+```bash
+export TRACIUM_SERVER_URL="https://api.tracium.com/v1/data"
+export TRACIUM_AGENT_TOKEN="your-static-token-here"
+```
+
+### Config Module (config/config.go)
+
+- Reads environment variables
+- Validates parameters
+- Manages server URL and authentication token
+
+## Server Communication
+
+### Protocol
+
+- **HTTP/HTTPS** with Bearer Token authentication
+- Structured JSON transmission
+- Standard security headers
+
+### Data Format
+
+```json
+{
+  "timestamp": 1640995200,
+  "system": {...},
+  "hardware": {...},
+  "network": {...},
+  "security": {...}
+}
+```
+
+### Sender Module (sender/sender.go)
+
+Responsible for secure data transmission:
+- Bearer Token authentication
+- HTTPS transmission
+- Security header validation
+- Error handling and retries

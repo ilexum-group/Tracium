@@ -1,5 +1,11 @@
 # Tracium - Building and Installation
 
+## Prerequisites
+
+- Go 1.25 or higher
+- Make (to use the cross-platform Makefile)
+- Git (for version control)
+
 ## Building
 
 ### Build for current platform
