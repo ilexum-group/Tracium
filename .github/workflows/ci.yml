@@ -132,6 +132,18 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+      with:
+        persist-credentials: false
+        fetch-depth: 0
 
     - name: Clear default GitHub credentials
       run: git config --unset-all http.https://github.com/.extraheader || true
