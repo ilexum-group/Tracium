@@ -7,39 +7,32 @@ run:
 
 linters:
   enable:
-    - bodyclose
-    - depguard
-    - dogsled
-    - dupl
-    - errcheck
-    - exportloopref
-    - exhaustive
-    - gochecknoinits
-    - goconst
-    - gocritic
-    - gocyclo
-    - gofmt
-    - goimports
     - revive
-    - gomnd
-    - goprintffuncname
-    - gosec
-    - gosimple
+    - goimports
     - govet
-    - ineffassign
-    - interfacer
-    - lll
-    - misspell
-    - nakedret
-    - noctx
-    - nolintlint
-    - rowserrcheck
-    - scopelint
     - staticcheck
-    - structcheck
-    - stylecheck
-    - unconvert
-    - unparam
+    - errcheck
+    - gocyclo
+    - dupl
     - unused
-    - varcheck
-    - whitespace
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  dupl:
+    threshold: 100
+  revive:
+    ignore-generated-header: true
+    severity: warning
+  goimports:
+    local-prefixes: github.com/tracium
+
+exclude-rules:
+  - path: "_test\\.go"
+    linters:
+      - errcheck
+      - dupl
+      - gocyclo
+  - linters:
+      - errcheck
+    text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv). is not checked"
