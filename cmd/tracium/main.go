@@ -8,6 +8,7 @@ import (
 	"github.com/tracium/internal/collector"
 	"github.com/tracium/internal/config"
 	"github.com/tracium/internal/diskimaging"
+	"github.com/tracium/internal/forensics"
 	"github.com/tracium/internal/models"
 	"github.com/tracium/internal/sender"
 	"github.com/tracium/internal/utils"
@@ -27,7 +28,14 @@ func main() {
 
 	// Collect system information
 	data := collectData()
-	utils.LogInfo("Data collection completed", map[string]string{"data_points": "5"}) // system, hardware, network, security, disk images
+
+	// Collect forensics data (optional based on environment variable)
+	if os.Getenv("TRACIUM_ENABLE_FORENSICS") != "false" {
+		utils.LogInfo("Collecting forensics data", map[string]string{})
+		data.Forensics = forensics.CollectForensicsData()
+	}
+
+	utils.LogInfo("Data collection completed", map[string]string{"data_points": "6"}) // system, hardware, network, security, forensics, disk images
 
 	// Create disk images (optional based on environment variable)
 	if os.Getenv("TRACIUM_ENABLE_DISK_IMAGING") == "true" {

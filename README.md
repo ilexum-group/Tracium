@@ -23,7 +23,8 @@ The agent collects and transmits the following data:
 3. Network Information: active interfaces, IP addresses, MAC addresses, listening ports
 4. Security Information: running processes with resource usage, active system services
 5. Disk Imaging: optional forensic copies of disks with MD5 hash verification
-6. Execution Logs: RFC 5424 compliant logs of all agent operations and data collection steps
+6. Forensic Artifacts: browser history, cookies, recent files, command history, downloads, network cache
+7. Execution Logs: RFC 5424 compliant logs of all agent operations and data collection steps
 
 All collected data, disk images, and execution logs are transmitted to the remote server via HTTPS.
 
@@ -53,10 +54,18 @@ export TRACIUM_DISK_PATH="/dev/sda"
 export TRACIUM_IMAGE_OUTPUT_DIR="/tmp/images"
 ```
 
+Optional configuration for forensics:
+
+```bash
+# Disable forensics collection (enabled by default)
+export TRACIUM_ENABLE_FORENSICS="false"
+```
+
 ## Documentation
 
 - [cmd/tracium/README.md](cmd/tracium/README.md) - Building, installation, and execution instructions
 - [internal/README.md](internal/README.md) - Internal components and architecture
+- [internal/forensics/README.md](internal/forensics/README.md) - Forensic data collection capabilities
 - [tests/README.md](tests/README.md) - Testing and test coverage
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Comprehensive technical documentation including data transmission model, logging system, and sequence diagrams
 
