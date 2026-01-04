@@ -97,36 +97,21 @@ type DiskImage struct {
 
 // ForensicsData holds forensic artifacts collected from the system
 type ForensicsData struct {
-	BrowserHistory   []BrowserHistoryEntry `json:"browser_history"`
-	Cookies          []CookieEntry         `json:"cookies"`
-	RecentFiles      []RecentFileEntry     `json:"recent_files"`
-	CommandHistory   []CommandEntry        `json:"command_history"`
-	Downloads        []DownloadEntry       `json:"downloads"`
-	NetworkHistory   NetworkHistoryData    `json:"network_history"`
-	CollectionErrors []string              `json:"collection_errors,omitempty"`
+	RecentFiles      []RecentFileEntry  `json:"recent_files"`
+	CommandHistory   []CommandEntry     `json:"command_history"`
+	NetworkHistory   NetworkHistoryData `json:"network_history"`
+	BrowserDBFiles   []ForensicFile     `json:"browser_db_files,omitempty"`
+	CollectionErrors []string           `json:"collection_errors,omitempty"`
 }
 
-// BrowserHistoryEntry represents a browser history entry
-type BrowserHistoryEntry struct {
-	Browser       string `json:"browser"` // chrome, firefox, edge, safari
-	URL           string `json:"url"`
-	Title         string `json:"title"`
-	VisitCount    int    `json:"visit_count"`
-	LastVisitTime int64  `json:"last_visit_time"` // Unix timestamp
-	Typed         bool   `json:"typed,omitempty"`
-}
-
-// CookieEntry represents a browser cookie
-type CookieEntry struct {
-	Browser      string `json:"browser"`
-	Host         string `json:"host"`
-	Name         string `json:"name"`
-	Value        string `json:"value,omitempty"` // May be encrypted
-	Path         string `json:"path"`
-	ExpiresTime  int64  `json:"expires_time"` // Unix timestamp
-	Secure       bool   `json:"secure"`
-	HTTPOnly     bool   `json:"http_only"`
-	CreationTime int64  `json:"creation_time"` // Unix timestamp
+// ForensicFile represents a collected artifact file (e.g., browser DB)
+type ForensicFile struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+	Hash     string `json:"hash"`
+	Category string `json:"category"` // e.g., browser_db
+	Browser  string `json:"browser,omitempty"`
 }
 
 // RecentFileEntry represents a recently accessed file
@@ -143,19 +128,6 @@ type CommandEntry struct {
 	Command   string `json:"command"`
 	Timestamp int64  `json:"timestamp"` // Unix timestamp (if available)
 	LineNum   int    `json:"line_num"`  // Line number in history file
-}
-
-// DownloadEntry represents a downloaded file
-type DownloadEntry struct {
-	Browser    string `json:"browser,omitempty"`
-	FilePath   string `json:"file_path"`
-	URL        string `json:"url,omitempty"`
-	StartTime  int64  `json:"start_time"` // Unix timestamp
-	EndTime    int64  `json:"end_time"`   // Unix timestamp
-	BytesTotal int64  `json:"bytes_total"`
-	State      string `json:"state"` // complete, interrupted, cancelled
-	DangerType string `json:"danger_type,omitempty"`
-	MimeType   string `json:"mime_type,omitempty"`
 }
 
 // NetworkHistoryData holds network connection history
