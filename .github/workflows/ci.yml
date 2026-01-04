@@ -97,12 +97,44 @@ jobs:
           echo "golint not available, skipping"
         fi
 
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.25'
+
+    - name: Cache Go modules
+      uses: actions/cache@v5
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run govulncheck
+      uses: golang/govulncheck-action@v1
+      with:
+        go-version-input: '1.25'
+        go-package: ./...
+
   lint:
     name: Lint Code
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
+
+    - name: Clear default GitHub credentials
+      run: git config --unset-all http.https://github.com/.extraheader || true
 
     - name: Set up Go
       uses: actions/setup-go@v6
