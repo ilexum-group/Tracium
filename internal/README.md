@@ -4,11 +4,13 @@
 
 ```
 internal/
-├── collector/    # Data collection module
-├── sender/      # Data transmission module
-├── config/      # Configuration management
-├── models/      # Data structures
-└── utils/       # Auxiliary utilities
+├── collector/     # Data collection module
+├── sender/        # Data transmission module
+├── config/        # Configuration management
+├── models/        # Data structures
+├── forensics/     # Forensic artifacts collection
+├── diskimaging/   # Disk imaging module
+└── utils/         # Auxiliary utilities
 ```
 
 ## Main Modules
@@ -93,9 +95,58 @@ type SystemData struct {
     Network    NetworkInfo
     Security   SecurityInfo
     DiskImages []DiskImage
+    Forensics  ForensicsData // Forensic artifacts
     Logs       []string      // RFC 5424 formatted logs
 }
 ```
+
+### Forensics (forensics/forensics.go)
+
+Module for collecting forensic artifacts from the system:
+
+**Browser History:**
+- Chrome, Firefox, Edge browsing history
+- URLs, titles, visit counts, timestamps
+- Typed URL detection
+
+**Cookies:**
+- Browser cookie metadata
+- Host, name, value (may be encrypted)
+- Security flags and expiration
+
+**Recent Files:**
+- Windows Recent Items folder
+- Linux XBEL (recently-used.xbel)
+- macOS recent items
+
+**Command History:**
+- PowerShell history (Windows)
+- Bash history (Linux/macOS)
+- Zsh history (Linux/macOS)
+- Command line execution records
+
+**Download History:**
+- Browser download records
+- File paths, URLs, timestamps
+- Download state and file sizes
+
+**Network History:**
+- ARP cache (IP-to-MAC mappings)
+- DNS cache (hostname resolutions)
+
+See [forensics/README.md](forensics/README.md) for detailed documentation.
+
+### DiskImaging (diskimaging/diskimaging.go)
+
+Module for creating forensic disk images:
+
+**Features:**
+- Bit-by-bit disk copying
+- MD5 hash verification
+- Metadata collection (size, creation time, source path)
+- Cross-platform support
+
+See [diskimaging/README.md](diskimaging/README.md) for detailed documentation.
 
 ### Utils (utils/logger.go)
 
@@ -145,6 +196,7 @@ Collected data is transmitted in structured JSON format:
 ## External Dependencies
 
 - **[crewjam/rfc5424](https://github.com/crewjam/rfc5424)**: RFC 5424 syslog message format
+- **[mattn/go-sqlite3](https://github.com/mattn/go-sqlite3)**: SQLite database driver for browser databases (requires CGO)
 - Go standard libraries for system and network access
 
 Dependencies are vendored in the `vendor/` directory for reproducible builds.
