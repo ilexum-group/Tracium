@@ -46,6 +46,9 @@ coverage.out
 # Local environment files
 .env
 .env.local
+
+# Dependabot temporary files
+dependabot-*.patch
 dist/
 
 # Environment variables

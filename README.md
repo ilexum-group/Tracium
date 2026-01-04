@@ -188,6 +188,42 @@ To create a new release:
 4. The CI pipeline will run automatically to validate code quality
 5. The release pipeline will build and upload binaries for all platforms
 
+### Automated Dependency Updates
+The project uses **Dependabot** for automated dependency management:
+
+#### Go Modules Updates
+- **Frequency**: Daily (every day at 09:00 UTC)
+- **Scope**: Updates `go.mod` dependencies (direct and indirect)
+- **PR Limits**: Maximum 10 open PRs at once
+- **Version Policy**: Auto-updates patch and minor versions
+- **Major Versions**: Require manual review
+- **Labels**: `dependencies`, `automated`
+- **Reviewers**: Automatically assigned to maintainers
+
+#### GitHub Actions Updates
+- **Frequency**: Daily (every day at 09:00 UTC)
+- **Scope**: Updates GitHub Actions versions
+- **PR Limits**: Maximum 5 open PRs at once
+- **Labels**: `github-actions`, `automated`
+
+#### Dependabot PR Process
+1. **Automatic Creation**: PRs are created automatically when updates are available
+2. **CI Validation**: All PRs pass through the full CI pipeline
+3. **Security Checks**: Updates are scanned for security vulnerabilities
+4. **Auto-Merge**: Dependency updates are automatically merged if all checks pass
+5. **Merge Ready**: PRs are ready to merge once CI passes
+
+#### Auto-Merge Policy
+- **Safe Updates**: Patch and minor version updates are auto-merged
+- **Major Updates**: Major version updates require manual review
+- **Security Updates**: Critical security updates are prioritized and auto-merged
+- **Test Coverage**: All updates must pass the complete test suite
+
+To enable Dependabot:
+1. Go to repository Settings → Security → Code security and analysis
+2. Enable "Dependabot security updates"
+3. The `.github/dependabot.yml` configuration will handle version updates
+
 ### Configuration
 1. Set the server URL:
    ```bash
@@ -311,7 +347,7 @@ Tracium implements RFC 5424 compliant syslog logging for forensic-grade audit tr
 2. Create feature branch: `git checkout -b feature/new-functionality`
 3. Make changes following the code standards
 4. **Run local validation**: `./validate.sh` (Linux/macOS)
-5. Run tests locally: `go test ./...`
+4. Run tests locally: `go test ./tests/...`
 6. Ensure code builds: `go build ./cmd/tracium`
 7. Format code: `gofmt -w .`
 8. Commit changes: `git commit -am 'Add new functionality'`

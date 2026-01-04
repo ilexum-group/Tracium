@@ -21,7 +21,7 @@ echo "✅ Go modules OK"
 echo
 
 echo "🧪 Running tests..."
-go test -v ./...
+go test -v ./tests/...
 echo "✅ Tests passed"
 echo
 

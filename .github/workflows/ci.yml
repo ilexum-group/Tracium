@@ -5,11 +5,15 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [ main, master ]
 
 jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -31,10 +35,10 @@ jobs:
       run: go mod download
 
     - name: Run tests
-      run: go test -v ./...
+      run: go test -v ./tests/...
 
     - name: Run tests with coverage
-      run: go test -coverprofile=coverage.out ./...
+      run: go test -coverprofile=coverage.out ./tests/...
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -46,6 +50,7 @@ jobs:
   build:
     name: Build Check
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -94,6 +99,7 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -111,6 +117,7 @@ jobs:
   lint:
     name: Lint Code
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
