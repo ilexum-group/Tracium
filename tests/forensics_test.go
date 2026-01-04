@@ -13,7 +13,7 @@ import (
 // TestCollectForensicsData tests the collection of forensic data
 func TestCollectForensicsData(t *testing.T) {
 	// Initialize logger for tests
-	os.Setenv("TRACIUM_LOG_LEVEL", "error") // Suppress logs during tests
+	_ = os.Setenv("TRACIUM_LOG_LEVEL", "error") // Suppress logs during tests
 
 	data := forensics.CollectForensicsData()
 
@@ -193,17 +193,17 @@ func TestForensicsErrorHandling(t *testing.T) {
 	}
 
 	// Set invalid paths
-	os.Setenv("HOME", "/nonexistent/path/to/nowhere")
-	os.Setenv("USERPROFILE", "C:\\nonexistent\\path\\to\\nowhere")
-	os.Setenv("LOCALAPPDATA", "C:\\nonexistent\\path\\to\\nowhere")
-	os.Setenv("APPDATA", "C:\\nonexistent\\path\\to\\nowhere")
+	_ = os.Setenv("HOME", "/nonexistent/path/to/nowhere")
+	_ = os.Setenv("USERPROFILE", "C:\\nonexistent\\path\\to\\nowhere")
+	_ = os.Setenv("LOCALAPPDATA", "C:\\nonexistent\\path\\to\\nowhere")
+	_ = os.Setenv("APPDATA", "C:\\nonexistent\\path\\to\\nowhere")
 
 	defer func() {
 		// Restore original environment
 		if runtime.GOOS == "windows" {
-			os.Setenv("USERPROFILE", originalHome)
+			_ = os.Setenv("USERPROFILE", originalHome)
 		} else {
-			os.Setenv("HOME", originalHome)
+			_ = os.Setenv("HOME", originalHome)
 		}
 	}()
 
