@@ -78,7 +78,6 @@ linters-settings:
     line-length: 120
 
 exclude-rules:
-  # Evita errores en archivos de test
   - path: "_test\\.go"
     linters:
       - gomnd
@@ -87,7 +86,6 @@ exclude-rules:
       - dupl
       - gosec
 
-  # Excluir errores específicos de funciones estándar
   - linters:
       - errcheck
     text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv). is not checked"
