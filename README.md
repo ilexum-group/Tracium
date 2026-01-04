@@ -16,7 +16,7 @@ Tracium is an advanced analysis and monitoring agent designed for PC and server 
 ### Main Components
 
 ```
-┌─────────────────┐    HTTP(S)    ┌─────────────────┐
+┌─────────────────┐    HTTP(S)   ┌─────────────────┐
 │   Target        │─────────────►│   Central       │
 │   System        │              │   Server        │
 │                 │              │                 │
@@ -160,6 +160,20 @@ make release
 ```
 
 Builds are generated in the `build/` directory with descriptive names like `tracium-linux-amd64`, `tracium-windows-amd64.exe`, etc.
+
+### CI/CD Pipeline
+The project includes a GitHub Actions pipeline that automatically compiles for all platforms when a new release is created:
+
+- **Trigger:** Release creation on GitHub
+- **Platforms:** Linux, macOS, Windows, FreeBSD, OpenBSD
+- **Architectures:** amd64, arm64, arm (Linux)
+- **Artifacts:** Compressed binaries automatically uploaded to the release
+
+To create a new release:
+1. Go to the "Releases" tab on GitHub
+2. Click "Create a new release"
+3. Tag the version (e.g., `v1.0.0`)
+4. The pipeline will run automatically and upload the binaries
 
 ### Configuration
 1. Set the server URL:
