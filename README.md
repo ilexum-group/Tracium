@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tracium is an advanced analysis and monitoring agent designed for PC and server environments. Developed in Go, this agent specializes in collecting technical evidence, digital forensic analysis, and continuous security monitoring. Running locally on the target system, Tracium collects critical system data and securely transmits it to a centralized server for analysis, storage, and correlation.
+Tracium is an advanced analysis and monitoring agent designed for PC and server environments. Developed in Go, this agent specializes in collecting technical evidence, digital forensic analysis, and continuous security monitoring.
 
 ## Main Objectives
 
@@ -12,8 +12,6 @@ Tracium is an advanced analysis and monitoring agent designed for PC and server 
 - **Technical Evidence Collection**: Complete documentation of system state for audits and compliance
 
 ## System Architecture
-
-### Main Components
 
 ```
 ┌─────────────────┐    HTTP(S)   ┌─────────────────┐
@@ -26,178 +24,59 @@ Tracium is an advanced analysis and monitoring agent designed for PC and server 
 └─────────────────┘              └─────────────────┘
 ```
 
-### Project Structure
+## Prerequisites
 
-```
-tracium/
-├── cmd/tracium/           # Main entry point
-│   └── main.go
-├── internal/
-│   ├── collector/         # Data collection modules
-│   │   └── collector.go
-│   ├── sender/           # Data transmission module
-│   │   └── sender.go
-│   ├── config/           # Configuration management
-│   │   └── config.go
-│   ├── models/           # Data structures
-│   │   └── models.go
-│   └── utils/            # Auxiliary utilities
-│       └── logger.go
-├── go.mod
-└── README.md
-```
-
-## Collected Data
-
-### System Information
-- Operating system and version
-- Hostname
-- Processor architecture
-- Uptime
-- System users
-
-### Hardware Information
-- **CPU**: Model, number of cores, frequency
-- **Memory**: Total, used, available
-- **Disk**: Partitions, total/used space, filesystem
-
-### Network Information
-- Active network interfaces
-- Assigned IP addresses
-- MAC addresses
-- Listening ports (TCP/UDP)
-
-### Security Information
-- Running processes (PID, name, user, CPU/memory usage)
-- Active system services
-- *Future*: Traffic capture, suspicious behavior detection
-
-## Server Communication
-
-### Protocol
-- **HTTP/HTTPS** with Bearer Token authentication
-- Structured JSON transmission
-- Standard security headers
-
-### Configuration
-```bash
-export TRACIUM_SERVER_URL="https://api.tracium.com/v1/data"
-export TRACIUM_AGENT_TOKEN="your-static-token-here"
-```
-
-### Data Format
-```json
-{
-  "timestamp": 1640995200,
-  "system": {
-    "os": "linux",
-    "hostname": "server01",
-    "architecture": "amd64",
-    "uptime": 3600,
-    "users": ["root", "admin"]
-  },
-  "hardware": {...},
-  "network": {...},
-  "security": {...}
-}
-```
-
-## Installation and Configuration
-
-### Prerequisites
 - Go 1.25 or higher
-- Access to environment variables for configuration
 - Make (to use the cross-platform Makefile)
 - Git (for version control)
 
-### Dependencies
-- [crewjam/rfc5424](https://github.com/crewjam/rfc5424) - RFC 5424 compliant syslog message formatting
-- Go standard libraries for system and network
+## Quick Start
 
-### Vendoring
-This project uses Go modules with vendoring for reproducible builds. Dependencies are included in the `vendor/` directory.
-
-```bash
-# Update vendor directory after dependency changes
-go mod vendor
-```
-
-### Initial Setup
 ```bash
 # Clone the repository
 git clone https://github.com/ilexum-group/tracium.git
 cd tracium
 
-# Initialize modules and dependencies
-go mod tidy
-```
-
-### Compilation
-```bash
 # Build for current platform
 make build
-
-# Or build manually
-go build -o tracium ./cmd/tracium
 ```
 
-### Cross-Platform Compilation
-Tracium supports cross-platform compilation thanks to Go. Use the included Makefile:
+## Configuration
 
 ```bash
-# Build for all supported platforms
-make build-all
-
-# Build for specific platforms
-make build-linux      # Linux (amd64, arm64)
-make build-darwin     # macOS (amd64, arm64)
-make build-windows    # Windows (amd64, arm64)
-make build-freebsd    # FreeBSD (amd64)
-make build-openbsd    # OpenBSD (amd64)
-
-# Create releases with compressed files
-make release
+export TRACIUM_SERVER_URL="https://api.tracium.com/v1/data"
+export TRACIUM_AGENT_TOKEN="your-static-token-here"
 ```
 
-Builds are generated in the `build/` directory with descriptive names like `tracium-linux-amd64`, `tracium-windows-amd64.exe`, etc.
+## Project Structure
 
-### CI/CD Pipeline
-The project includes comprehensive GitHub Actions pipelines for both continuous integration and release builds:
+```
+tracium/
+├── cmd/tracium/           # Main entry point
+├── internal/              # Internal components
+├── tests/                 # Project tests
+├── go.mod                 # Module definition
+└── README.md              # This file
+```
 
-#### Continuous Integration (CI)
-- **Trigger:** Push to main/master branch or Pull Request creation
-- **Checks Performed:**
-  - ✅ **Unit Tests**: Run all tests with coverage reporting
-  - ✅ **Build Verification**: Ensure code compiles successfully
-  - ✅ **Code Formatting**: Check Go code formatting with `gofmt`
-  - ✅ **Static Analysis**: Run `go vet` for code quality
-- ✅ **Security Scan**: Gosec security vulnerability scanning (via golangci-lint)
-  - ✅ **Linting**: Comprehensive linting with golangci-lint
-  - ✅ **Dependency Verification**: Validate module dependencies
+For detailed information, see:
+- [cmd/tracium/README.md](cmd/tracium/README.md) - Building and Installation
+- [internal/README.md](internal/README.md) - Components and Features
+- [tests/README.md](tests/README.md) - Testing
 
-#### Release Pipeline
-- **Trigger:** Release creation on GitHub
-- **Platforms:** Linux, macOS, Windows, FreeBSD, OpenBSD
-- **Architectures:** amd64, arm64, arm (Linux)
-- **Artifacts:** Compressed binaries automatically uploaded to the release
+## Server Communication
 
-To create a new release:
-1. Go to the "Releases" tab on GitHub
-2. Click "Create a new release"
-3. Tag the version (e.g., `v1.0.0`)
-4. The CI pipeline will run automatically to validate code quality
-5. The release pipeline will build and upload binaries for all platforms
+**Protocol:** HTTP/HTTPS with Bearer Token authentication
 
-### Automated Dependency Updates
-The project uses **Dependabot** for automated dependency management:
+**Data Format:** Structured JSON
 
-#### Go Modules Updates
-- **Frequency**: Daily (every day at 09:00 UTC)
-- **Scope**: Updates `go.mod` dependencies (direct and indirect)
-- **PR Limits**: Maximum 10 open PRs at once
-- **Version Policy**: Auto-updates patch and minor versions
-- **Major Versions**: Require manual review
-- **Labels**: `dependencies`, `automated`
+## Dependencies
+
+- [crewjam/rfc5424](https://github.com/crewjam/rfc5424) - RFC 5424 syslog message format
+
+## License
+
+See LICENSE for details.
 - **Reviewers**: Automatically assigned to maintainers
 
 #### GitHub Actions Updates
