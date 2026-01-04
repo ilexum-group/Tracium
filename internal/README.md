@@ -43,10 +43,34 @@ Responsible for systematic collection of system data:
 
 Module responsible for secure data transmission to the central server:
 
+**Features:**
 - Bearer Token authentication
 - HTTPS transmission
 - Security header validation
-- Error handling and retries
+- Error handling
+
+**Intelligent Chunked Transfer:**
+- **Metadata First**: Sends system data (metadata, logs) before disk images
+- **Automatic Chunking**: Disk images split into 64 MB chunks for large files
+- **Memory Efficient**: Only 64 MB loaded at a time (prevents OOM on multi-TB images)
+- **Progress Tracking**: Real-time logging of chunk transmission progress
+- **Network Safe**: Prevents timeout on large file transfers
+- **Resumable**: Failed chunks can be retried independently
+
+**Transmission Strategy:**
+1. For data WITHOUT disk images: Send as single JSON payload
+2. For data WITH disk images:
+   - Request 1: Send metadata (system info, hardware, network, security, logs)
+   - Requests 2-N: Send each disk image as individual 64 MB chunks
+   - Each chunk includes metadata: chunk number, total chunks, progress
+
+**Example Configuration:**
+```go
+const (
+    ChunkSize      = 64 * 1024 * 1024   // 64 MB per chunk
+    MaxPayloadSize = 100 * 1024 * 1024  // Switch to chunking at 100 MB
+)
+```
 
 ### Config (config/config.go)
 

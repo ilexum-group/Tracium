@@ -230,10 +230,76 @@ export TRACIUM_AGENT_TOKEN="your-secret-token-here"
 
 ### Payload Size Considerations
 
-- **Typical payload**: 5-50 KB (system metadata only)
-- **With disk images**: Can exceed several GB
-- **Network bandwidth**: Large disk images may consume significant bandwidth
-- **Timeout**: Configure HTTP client timeout appropriately for large transfers
+#### Standard Transmission (No Disk Images)
+- **Typical payload**: 5-50 KB (system metadata and logs only)
+- **Maximum payload**: 100 MB before switching to chunked mode
+- **Transmission**: Single HTTP POST request
+
+#### Large Data Transmission (With Disk Images)
+
+Tracium implements **intelligent chunked transfer** for large payloads:
+
+**Transmission Strategy:**
+1. **Metadata Phase**: Send all system data WITHOUT disk images (5-50 KB)
+   - System information
+   - Hardware information
+   - Network information
+   - Security information
+   - Execution logs
+   - Response: Server acknowledges receipt (HTTP 200)
+
+2. **Disk Image Phase**: Stream each disk image separately in 64 MB chunks
+   - Each chunk sent in individual HTTP POST request
+   - Chunk metadata includes: chunk number, total chunks, progress
+   - Response: Server confirms chunk received (HTTP 200)
+
+**Chunk Definition:**
+```json
+{
+  "type": "disk_image_chunk",
+  "image_path": "/tmp/image_sda_1735961234.img",
+  "image_hash": "a1b2c3d4e5f6...",
+  "chunk_num": 1,
+  "total_chunks": 16,
+  "chunk_size": 67108864,
+  "file_size": 1099511627776,
+  "data": "base64_encoded_or_binary_data"
+}
+```
+
+**Example Transmission Sequence:**
+- Metadata request: 5-50 KB
+- Disk image 1 (1 TB):
+  - Chunk 1: 64 MB
+  - Chunk 2: 64 MB
+  - ... (16 total chunks)
+- Disk image 2 (500 GB):
+  - Chunk 1: 64 MB
+  - ... (8 total chunks)
+- Total HTTP requests: 1 (metadata) + 24 (chunks) = 25 requests
+
+**Configuration Constants:**
+```go
+ChunkSize      = 64 * 1024 * 1024   // 64 MB per chunk
+MaxPayloadSize = 100 * 1024 * 1024  // Switch to chunking at 100 MB
+```
+
+**Benefits of Chunked Transfer:**
+- **Memory Efficient**: Only 64 MB loaded into memory at a time
+- **Network Safe**: Prevents timeout on large file transfers
+- **Resumable**: Failed chunks can be retried without resending metadata
+- **Observable**: Real-time progress logging (percentage completion)
+- **Server-Friendly**: Allows incremental processing and storage
+- **Scalable**: Works for multi-TB disk images
+
+**Progress Logging Example:**
+```
+<14>1 2026-01-04T18:47:16Z server01 Tracium 1234 - - Sending chunk 1/16
+<14>1 2026-01-04T18:47:17Z server01 Tracium 1234 - - Chunk sent successfully (progress: 6.2%)
+<14>1 2026-01-04T18:47:18Z server01 Tracium 1234 - - Sending chunk 2/16
+<14>1 2026-01-04T18:47:19Z server01 Tracium 1234 - - Chunk sent successfully (progress: 12.5%)
+...
+```
 
 ---
 
@@ -476,38 +542,54 @@ Agent Start
     │   │   ├─► Add logs array to SystemData payload
     │   │   └─ Logs include: initialization, configuration, collection, disk imaging steps
     │   │
-    │   ├─► Create HTTP POST Request
-    │   │   ├─► URL: TRACIUM_SERVER_URL
-    │   │   ├─► Method: POST
-    │   │   ├─► Body: JSON payload (including logs array)
-    │   │   ├─► Header: Content-Type: application/json
-    │   │   ├─► Header: Authorization: Bearer {token}
-    │   │   ├─► Header: User-Agent: Tracium-Agent/1.0
-    │   │   └─ LOG: "HTTP request prepared" (DEBUG)
-    │   │
-    │   └─► Send HTTP Request
-    │       │
-    │       ├─► Establish HTTPS connection
-    │       ├─► Transmit request with logs
-    │       └─ LOG: "Sending HTTP request" (DEBUG)
-    │
-    ├─► Receive Response
-    │   │
-    │   ├─► Check HTTP Status Code
+    │   ├─► Check if Disk Images Present
     │   │   │
-    │   │   ├─► IF Status == 200 OK
-    │   │   │   ├─ LOG: "Data sent successfully to server"
-    │   │   │   └─► Return success
+    │   │   ├─► IF DiskImages array is not empty
+    │   │   │   │
+    │   │   │   ├─► CHUNKED TRANSFER MODE
+    │   │   │   │
+    │   │   │   ├─► Step 1: Send Metadata (without disk images)
+    │   │   │   │   ├─► Remove disk images from data
+    │   │   │   │   ├─► Create HTTP POST Request (5-50 KB)
+    │   │   │   │   ├─► Headers: Content-Type, Authorization, User-Agent
+    │   │   │   │   ├─ LOG: "Sending metadata payload"
+    │   │   │   │   ├─► Send request
+    │   │   │   │   └─ LOG: "Metadata sent successfully" (if HTTP 200)
+    │   │   │   │
+    │   │   │   └─► Step 2: Stream Each Disk Image in Chunks
+    │   │   │       │
+    │   │   │       ├─► FOR EACH disk image:
+    │   │   │       │   │
+    │   │   │       │   ├─ LOG: "Starting chunked transfer" (image size, chunk count)
+    │   │   │       │   │
+    │   │   │       │   └─► FOR EACH 64 MB chunk:
+    │   │   │       │       │
+    │   │   │       │       ├─► Read 64 MB from disk image file
+    │   │   │       │       ├─► Create chunk payload JSON:
+    │   │   │       │       │   ├── type: "disk_image_chunk"
+    │   │   │       │       │   ├── image_path, image_hash
+    │   │   │       │       │   ├── chunk_num, total_chunks
+    │   │   │       │       │   └── chunk_size, file_size
+    │   │   │       │       │
+    │   │   │       │       ├─► Create HTTP POST Request
+    │   │   │       │       ├─► Headers: Content-Type, Authorization, User-Agent
+    │   │   │       │       ├─ LOG: "Sending chunk X/Y" (progress %)
+    │   │   │       │       ├─► Send chunk request
+    │   │   │       │       └─ LOG: "Chunk sent successfully" (if HTTP 200)
+    │   │   │       │
+    │   │   │       └─ LOG: "All disk images sent successfully"
     │   │   │
-    │   │   └─► ELSE
-    │   │       ├─ LOG: "Server returned non-OK status" (WARN)
-    │   │       └─► Return error
-    │   │
-    │   └─► Close Response
-    │       └─ LOG: Error if close fails (ERROR)
+    │   │   └─► ELSE (No disk images)
+    │   │       │
+    │   │       └─► STANDARD MODE
+    │   │           ├─► Create HTTP POST Request (all data as JSON)
+    │   │           ├─► Headers: Content-Type, Authorization, User-Agent
+    │   │           ├─ LOG: "Sending JSON payload"
+    │   │           ├─► Send request
+    │   │           └─ LOG: "Data sent successfully" (if HTTP 200)
     │
     └─► Exit Agent
-        └─ LOG: "Data sent successfully" (final status)
+        └─ LOG: "Agent completed execution"
 ```
 
 ### Data Flow with Timing
@@ -542,15 +624,27 @@ Timeline (milliseconds)
 │     └─ LOG: Disk image created successfully
 │
 ├─ T=+data_collection_time
-│  └─ JSON marshaling
+│  └─ JSON marshaling and log collection
 │     └─ LOG [+10ms]: Preparing to send data to server
 │
 ├─ T=+marshaling_time
-│  └─ HTTP transmission
-│     ├─ Create request [+5ms]
-│     ├─ LOG [DEBUG]: Sending HTTP request
-│     └─ Send request [+network_latency]
-│
+│  └─ HTTP transmission (strategy depends on data size)
+│     │
+│     ├─ IF disk images present:
+│     │   ├─ T=0ms: Create metadata request (5-50 KB)
+│     │   ├─ LOG: "Sending metadata payload"
+│     │   ├─ T=+network_latency: Metadata sent successfully
+│     │   │
+│     │   ├─ T=+network_latency: Start chunked image transfer (64 MB chunks)
+│     │   ├─ FOR EACH chunk (repeat per image):
+│     │   │   ├─ LOG: "Sending chunk X/Y" (progress %)
+│     │   │   └─ T=+network_latency: Chunk sent successfully
+│     │   │
+│     │   └─ LOG: "All disk images sent successfully"
+│     │
+│     └─ ELSE:
+│         ├─ LOG: "Sending JSON payload"
+│         └─ T=+network_latency: Data sent successfully
 ├─ T=+transmission_time
 │  └─ Receive response
 │     ├─ Read status [+5ms]

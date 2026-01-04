@@ -62,4 +62,60 @@ For each disk image, the following metadata is collected:
 - Disk imaging requires elevated privileges (root on Linux/macOS, Administrator on Windows)
 - Large disks may take considerable time to image
 - Ensure sufficient disk space for output images
-- Consider network bandwidth for transmission of large images
+- Disk images are transmitted to the server using intelligent chunking (see Transmission section below)
+
+## Transmission Strategy
+
+### Chunked Transfer for Large Disk Images
+
+The sender module implements automatic chunking for disk images:
+
+**Features:**
+- **Metadata First**: System metadata (system, hardware, network, logs) sent first without disk images
+- **Chunked Streaming**: Disk images sent in 64 MB chunks to avoid memory issues
+- **Progress Tracking**: Detailed logging of chunk transmission progress
+- **Error Recovery**: Failed chunks can be retried without resending metadata
+
+**Chunk Structure:**
+```json
+{
+  "type": "disk_image_chunk",
+  "image_path": "/tmp/image_sda_1735961234.img",
+  "image_hash": "a1b2c3d4e5f6...",
+  "chunk_num": 1,
+  "total_chunks": 16,
+  "chunk_size": 67108864,
+  "file_size": 1099511627776,
+  "data": "..."
+}
+```
+
+**Example Transmission Flow:**
+1. Send metadata (5-50 KB) - all collected data except disk images
+2. Disk image 1 → 16 chunks of 64 MB each (1 TB total)
+3. Disk image 2 → N chunks (if multiple images)
+4. Each chunk logged with progress percentage
+
+**Benefits:**
+- **Memory Efficient**: Only 64 MB loaded at a time
+- **Resume Capable**: Chunks can be retried individually
+- **Bandwidth Safe**: Prevents connection timeouts on large transfers
+- **Server Friendly**: Allows incremental processing on server side
+- **Observable**: Real-time progress logging for monitoring
+
+### Configuration
+
+Chunk size and maximum payload are configurable constants in `sender/sender.go`:
+
+```go
+const (
+    ChunkSize      = 64 * 1024 * 1024  // 64 MB per chunk
+    MaxPayloadSize = 100 * 1024 * 1024 // 100 MB max before chunking
+)
+```
+
+Adjust these values based on:
+- Available network bandwidth
+- Server processing capacity
+- Memory constraints
+- Timeout thresholds
