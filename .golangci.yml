@@ -5,6 +5,34 @@ run:
   tests: true
   issues-exit-code: 1
 
+  exclude-rules:
+    - path: "_test\\.go"
+      linters:
+        - gomnd
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+
+    - linters:
+        - errcheck
+      text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv). is not checked"
+
+    - linters:
+        - golint
+      text: "func name will be used as test\\.Test.* by other packages, and that stutters; consider calling this"
+
+    - linters:
+        - govet
+      text: "(possible misuse of unsafe.Pointer|should have signature)"
+
+    - linters:
+        - staticcheck
+      text: "ineffective break statement. Did you mean to break out of the outer loop"
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
 linters:
   enable:
     - bodyclose
@@ -76,34 +104,3 @@ linters-settings:
     locale: US
   lll:
     line-length: 120
-
-run:
-  exclude-rules:
-    # Evita errores en test files
-    - path: "_test\\.go"
-      linters:
-        - gomnd
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-
-    # Excluir errores específicos de funciones estándar
-    - linters:
-        - errcheck
-      text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv). is not checked"
-
-    - linters:
-        - golint
-      text: "func name will be used as test\\.Test.* by other packages, and that stutters; consider calling this"
-
-    - linters:
-        - govet
-      text: "(possible misuse of unsafe.Pointer|should have signature)"
-
-    - linters:
-        - staticcheck
-      text: "ineffective break statement. Did you mean to break out of the outer loop"
-
-  max-issues-per-linter: 0
-  max-same-issues: 0
