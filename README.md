@@ -111,7 +111,7 @@ export TRACIUM_AGENT_TOKEN="your-static-token-here"
 - Git (for version control)
 
 ### Dependencies
-- [logrus](https://github.com/sirupsen/logrus) - Structured logging
+- [crewjam/rfc5424](https://github.com/crewjam/rfc5424) - RFC 5424 compliant syslog message formatting
 - Go standard libraries for system and network
 
 ### Vendoring
@@ -195,6 +195,42 @@ To create a new release:
 ./tracium -verbose
 ```
 
+## Logging System
+
+Tracium implements RFC 5424 compliant syslog logging for forensic-grade audit trails and structured logging. The logging system provides:
+
+### RFC 5424 Compliance
+- **Structured Format**: All log entries follow the RFC 5424 syslog standard
+- **Priority Levels**: Proper facility and severity encoding (user-level facility)
+- **Timestamp**: ISO 8601 formatted timestamps in UTC
+- **Structured Data**: Metadata support with SD-ID format `[meta@1 key="value"]`
+- **Dynamic Fields**: Hostname and process ID automatically detected
+
+### Log Levels
+- **INFO** (severity 6): General operational messages
+- **WARN** (severity 4): Warning conditions
+- **ERROR** (severity 3): Error conditions
+- **DEBUG** (severity 7): Detailed debugging information
+
+### Sample Log Output
+```
+<14>1 2026-01-04T18:04:10.537894Z andres-pc Tracium 20968 ID94700 [meta@1 test="true" level="info"] Test info message
+<12>1 2026-01-04T18:04:10.537894Z andres-pc Tracium 20968 ID94700 [meta@1 test="true" level="warn"] Test warning message
+<11>1 2026-01-04T18:04:10.537894Z andres-pc Tracium 20968 ID94700 [meta@1 test="true" level="error"] Test error message
+<15>1 2026-01-04T18:04:10.537894Z andres-pc Tracium 20968 ID94700 [meta@1 level="debug" test="true"] Test debug message
+```
+
+### Log Format Explanation
+- `<PRI>`: Priority (facility * 8 + severity)
+- `VERSION`: RFC 5424 version (always 1)
+- `TIMESTAMP`: ISO 8601 UTC timestamp
+- `HOSTNAME`: System hostname
+- `APP-NAME`: Application name (Tracium)
+- `PROCID`: Process ID
+- `MSGID`: Unique message identifier
+- `[STRUCTURED-DATA]`: Optional metadata in SD-ID format
+- `MSG`: Log message content
+
 ## Security and Privacy Considerations
 
 ### Data Security
@@ -267,7 +303,7 @@ To create a new release:
 ### Code Standards
 - Follow [Effective Go](https://golang.org/doc/effective_go.html)
 - Use `gofmt` for formatting
-- Use [logrus](https://github.com/sirupsen/logrus) for structured logging
+- Use RFC 5424 compliant structured logging
 - Include tests for new functionalities
 - Document public APIs
 

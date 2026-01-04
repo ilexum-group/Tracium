@@ -13,17 +13,17 @@ import (
 
 // SendData sends the collected data to the server
 func SendData(cfg *config.Config, data models.SystemData) error {
-	utils.Logger.Info("Preparing to send data to server")
+	utils.LogInfo("Preparing to send data to server", map[string]string{"url": cfg.ServerURL})
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		utils.Logger.WithError(err).Error("Failed to marshal data")
+		utils.LogError("Failed to marshal data", map[string]string{"error": err.Error()})
 		return fmt.Errorf("failed to marshal data: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", cfg.ServerURL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		utils.Logger.WithError(err).Error("Failed to create request")
+		utils.LogError("Failed to create request", map[string]string{"error": err.Error()})
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -31,21 +31,21 @@ func SendData(cfg *config.Config, data models.SystemData) error {
 	req.Header.Set("Authorization", "Bearer "+cfg.AgentToken)
 	req.Header.Set("User-Agent", "Tracium-Agent/1.0")
 
-	utils.Logger.WithField("url", cfg.ServerURL).Info("Sending request to server")
+	utils.LogDebug("Sending HTTP request", map[string]string{"method": "POST", "content_length": fmt.Sprintf("%d", len(jsonData))})
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		utils.Logger.WithError(err).Error("Failed to send request")
+		utils.LogError("Failed to send request", map[string]string{"error": err.Error()})
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		utils.Logger.WithField("status_code", resp.StatusCode).Error("Server returned non-OK status")
+		utils.LogWarn("Server returned non-OK status", map[string]string{"status_code": fmt.Sprintf("%d", resp.StatusCode)})
 		return fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 
-	utils.Logger.Info("Data sent successfully to server")
+	utils.LogInfo("Data sent successfully to server", map[string]string{"status_code": fmt.Sprintf("%d", resp.StatusCode)})
 	return nil
 }

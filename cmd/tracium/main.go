@@ -11,23 +11,29 @@ import (
 )
 
 func main() {
-	utils.Logger.Info("Starting Tracium agent")
+	// Initialize the RFC 5424 compliant logger
+	if err := utils.InitDefaultLogger(); err != nil {
+		panic("Failed to initialize logger: " + err.Error())
+	}
+
+	utils.LogInfo("Starting Tracium agent", map[string]string{"version": "1.0.0"})
 
 	// Load configuration
 	cfg := config.Load()
-	utils.Logger.WithField("server_url", cfg.ServerURL).Info("Configuration loaded")
+	utils.LogInfo("Configuration loaded", map[string]string{"server_url": cfg.ServerURL})
 
 	// Collect system information
 	data := collectData()
-	utils.Logger.Info("Data collection completed")
+	utils.LogInfo("Data collection completed", map[string]string{"data_points": "4"}) // system, hardware, network, security
 
 	// Send data to server
 	err := sender.SendData(cfg, data)
 	if err != nil {
-		utils.Logger.WithError(err).Fatal("Failed to send data")
+		utils.LogError("Failed to send data", map[string]string{"error": err.Error()})
+		return
 	}
 
-	utils.Logger.Info("Data sent successfully")
+	utils.LogInfo("Data sent successfully", map[string]string{"status": "completed"})
 }
 
 func collectData() models.SystemData {
