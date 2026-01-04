@@ -171,7 +171,7 @@ The project includes comprehensive GitHub Actions pipelines for both continuous 
   - ✅ **Build Verification**: Ensure code compiles successfully
   - ✅ **Code Formatting**: Check Go code formatting with `gofmt`
   - ✅ **Static Analysis**: Run `go vet` for code quality
-  - ✅ **Security Scan**: Gosec security vulnerability scanning
+- ✅ **Security Scan**: Gosec security vulnerability scanning (via golangci-lint)
   - ✅ **Linting**: Comprehensive linting with golangci-lint
   - ✅ **Dependency Verification**: Validate module dependencies
 
@@ -359,8 +359,7 @@ All pull requests must pass the CI/CD pipeline checks:
 - ✅ **Tests**: All tests must pass
 - ✅ **Build**: Code must compile successfully
 - ✅ **Formatting**: Code must be properly formatted with `gofmt`
-- ✅ **Linting**: Must pass golangci-lint checks
-- ✅ **Security**: Must pass security scans
+- ✅ **Linting**: Must pass golangci-lint checks (includes security scanning)
 - ✅ **Coverage**: Test coverage must be maintained
 
 ### Code Standards

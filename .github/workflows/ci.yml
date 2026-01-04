@@ -96,24 +96,6 @@ jobs:
           echo "golint not available, skipping"
         fi
 
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.25'
-
-    - name: Run Gosec Security Scanner
-      uses: securecodewarrior/github-action-gosec@master
-      with:
-        args: './...'
-
   lint:
     name: Lint Code
     runs-on: ubuntu-latest
