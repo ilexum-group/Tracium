@@ -613,7 +613,7 @@ func readFileWithLimit(path string, maxSize int64) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	truncated := info.Size() > maxSize
 	readSize := info.Size()
