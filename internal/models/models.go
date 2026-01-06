@@ -97,11 +97,23 @@ type DiskImage struct {
 
 // ForensicsData holds forensic artifacts collected from the system
 type ForensicsData struct {
-	RecentFiles      []RecentFileEntry  `json:"recent_files"`
-	CommandHistory   []CommandEntry     `json:"command_history"`
-	NetworkHistory   NetworkHistoryData `json:"network_history"`
-	BrowserDBFiles   []ForensicFile     `json:"browser_db_files,omitempty"`
-	CollectionErrors []string           `json:"collection_errors,omitempty"`
+	RecentFiles       []RecentFileEntry   `json:"recent_files"`
+	CommandHistory    []CommandEntry      `json:"command_history"`
+	NetworkHistory    NetworkHistoryData  `json:"network_history"`
+	BrowserDBFiles    []ForensicFile      `json:"browser_db_files,omitempty"`
+	SystemLogs        []LogFile           `json:"system_logs,omitempty"`
+	ScheduledTasks    []ScheduledTask     `json:"scheduled_tasks,omitempty"`
+	ActiveConnections []NetworkConnection `json:"active_connections,omitempty"`
+	HostsFile         *ForensicFile       `json:"hosts_file,omitempty"`
+	SSHKeys           []SSHKeyInfo        `json:"ssh_keys,omitempty"`
+	InstalledSoftware []SoftwareInfo      `json:"installed_software,omitempty"`
+	EnvironmentVars   map[string]string   `json:"environment_vars,omitempty"`
+	RecentDownloads   []RecentFileEntry   `json:"recent_downloads,omitempty"`
+	USBHistory        []USBDevice         `json:"usb_history,omitempty"`
+	PrefetchFiles     []PrefetchInfo      `json:"prefetch_files,omitempty"`
+	RecycleBin        []DeletedFile       `json:"recycle_bin,omitempty"`
+	ClipboardContent  string              `json:"clipboard_content,omitempty"`
+	CollectionErrors  []string            `json:"collection_errors,omitempty"`
 }
 
 // ForensicFile represents a collected artifact file (e.g., browser DB)
@@ -112,6 +124,7 @@ type ForensicFile struct {
 	Hash     string `json:"hash"`
 	Category string `json:"category"` // e.g., browser_db
 	Browser  string `json:"browser,omitempty"`
+	Data     string `json:"data,omitempty"` // Base64 encoded file content
 }
 
 // RecentFileEntry represents a recently accessed file
@@ -150,4 +163,83 @@ type DNSEntry struct {
 	IPAddress  []string `json:"ip_address"`
 	RecordType string   `json:"record_type"` // A, AAAA, CNAME, etc.
 	TTL        int      `json:"ttl"`
+}
+
+// LogFile represents a system log file
+type LogFile struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Size      int64  `json:"size"`
+	Content   string `json:"content,omitempty"` // Last N lines or full content if small
+	Truncated bool   `json:"truncated"`
+}
+
+// ScheduledTask represents a scheduled task or cron job
+type ScheduledTask struct {
+	Name        string `json:"name"`
+	Command     string `json:"command"`
+	Schedule    string `json:"schedule"`
+	User        string `json:"user"`
+	Enabled     bool   `json:"enabled"`
+	Source      string `json:"source"` // cron, systemd, windows_task, etc.
+	Description string `json:"description,omitempty"`
+}
+
+// NetworkConnection represents an active network connection
+type NetworkConnection struct {
+	Protocol      string `json:"protocol"` // TCP, UDP
+	LocalAddress  string `json:"local_address"`
+	LocalPort     int    `json:"local_port"`
+	RemoteAddress string `json:"remote_address"`
+	RemotePort    int    `json:"remote_port"`
+	State         string `json:"state"` // ESTABLISHED, LISTEN, etc.
+	PID           int    `json:"pid,omitempty"`
+	ProcessName   string `json:"process_name,omitempty"`
+}
+
+// SSHKeyInfo represents SSH key information
+type SSHKeyInfo struct {
+	Path        string `json:"path"`
+	Type        string `json:"type"` // authorized_keys, known_hosts, private_key, public_key
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Size        int64  `json:"size"`
+	Content     string `json:"content,omitempty"` // Base64 for small files
+}
+
+// SoftwareInfo represents installed software
+type SoftwareInfo struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Publisher   string `json:"publisher,omitempty"`
+	InstallDate string `json:"install_date,omitempty"`
+	Source      string `json:"source"` // registry, apt, yum, brew, etc.
+}
+
+// USBDevice represents USB device connection history
+type USBDevice struct {
+	DeviceID     string `json:"device_id"`
+	VendorID     string `json:"vendor_id,omitempty"`
+	ProductID    string `json:"product_id,omitempty"`
+	SerialNumber string `json:"serial_number,omitempty"`
+	Description  string `json:"description,omitempty"`
+	FirstSeen    string `json:"first_seen,omitempty"`
+	LastSeen     string `json:"last_seen,omitempty"`
+}
+
+// PrefetchInfo represents Windows prefetch file information
+type PrefetchInfo struct {
+	FileName    string `json:"file_name"`
+	Executable  string `json:"executable"`
+	RunCount    int    `json:"run_count,omitempty"`
+	LastRunTime int64  `json:"last_run_time,omitempty"`
+	FilesLoaded int    `json:"files_loaded,omitempty"`
+}
+
+// DeletedFile represents a file in recycle bin
+type DeletedFile struct {
+	OriginalPath string `json:"original_path"`
+	DeletedPath  string `json:"deleted_path"`
+	FileName     string `json:"file_name"`
+	Size         int64  `json:"size"`
+	DeletedTime  int64  `json:"deleted_time,omitempty"`
 }
