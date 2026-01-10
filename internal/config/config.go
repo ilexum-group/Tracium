@@ -9,6 +9,7 @@ import (
 type Config struct {
 	ServerURL  string
 	AgentToken string
+	CaseID     string
 }
 
 // Load loads the configuration from environment variables or defaults
@@ -16,6 +17,7 @@ func Load() *Config {
 	return &Config{
 		ServerURL:  getEnv("TRACIUM_SERVER_URL", "https://api.tracium.com/v1/data"),
 		AgentToken: getEnv("TRACIUM_AGENT_TOKEN", ""),
+		CaseID:     getEnv("TRACIUM_CASE_ID", ""),
 	}
 }
 

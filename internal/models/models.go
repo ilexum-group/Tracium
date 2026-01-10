@@ -4,6 +4,7 @@ package models
 // SystemData represents the complete data collected by the agent
 type SystemData struct {
 	Timestamp  int64         `json:"timestamp"`
+	CaseID     string        `json:"case_id"`     // Case identifier for correlation
 	System     SystemInfo    `json:"system"`
 	Hardware   HardwareInfo  `json:"hardware"`
 	Network    NetworkInfo   `json:"network"`

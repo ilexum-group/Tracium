@@ -2,6 +2,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"time"
 
@@ -15,6 +16,10 @@ import (
 )
 
 func main() {
+	// Parse command-line flags
+	caseID := flag.String("case-id", "", "Case identifier for correlation")
+	flag.Parse()
+
 	// Initialize the RFC 5424 compliant logger
 	if err := utils.InitDefaultLogger(); err != nil {
 		panic("Failed to initialize logger: " + err.Error())
@@ -24,7 +29,13 @@ func main() {
 
 	// Load configuration
 	cfg := config.Load()
-	utils.LogInfo("Configuration loaded", map[string]string{"server_url": cfg.ServerURL})
+	
+	// Override case ID if provided via flag
+	if *caseID != "" {
+		cfg.CaseID = *caseID
+	}
+	
+	utils.LogInfo("Configuration loaded", map[string]string{"server_url": cfg.ServerURL, "case_id": cfg.CaseID})
 
 	// Collect system information
 	data := collectData()
@@ -56,8 +67,10 @@ func main() {
 }
 
 func collectData() models.SystemData {
+	cfg := config.Load()
 	data := models.SystemData{
 		Timestamp: time.Now().Unix(),
+		CaseID:    cfg.CaseID,
 	}
 
 	// Collect system info

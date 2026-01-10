@@ -34,7 +34,9 @@ All collected data, disk images, and execution logs are transmitted to the remot
 git clone https://github.com/ilexum-group/tracium.git
 cd tracium
 make build
-./build/tracium
+
+# Run with case ID
+./build/tracium -case-id CASE-2026-001
 ```
 
 ## Configuration
@@ -44,6 +46,28 @@ Set the following environment variables before running the agent:
 ```bash
 export TRACIUM_SERVER_URL="https://api.tracium.com/v1/data"
 export TRACIUM_AGENT_TOKEN="your-authentication-token"
+export TRACIUM_CASE_ID="CASE-2026-001"
+```
+
+**Command-Line Flags:**
+
+```
+-case-id ID    Case identifier for correlation (overrides TRACIUM_CASE_ID)
+```
+
+**Example Usage:**
+
+```bash
+# Using command-line flag (recommended)
+./build/tracium -case-id CASE-2026-001
+
+# Using environment variable
+export TRACIUM_CASE_ID="CASE-2026-001"
+./build/tracium
+
+# Command-line flag takes precedence over environment variable
+export TRACIUM_CASE_ID="OLD-CASE"
+./build/tracium -case-id CASE-2026-001  # Uses CASE-2026-001
 ```
 
 Optional configuration for disk imaging:
