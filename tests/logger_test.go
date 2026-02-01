@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ilexum/tracium/internal/utils"
+	"github.com/ilexum-group/tracium/internal/utils"
 )
 
 func TestRFC5424Logger(t *testing.T) {

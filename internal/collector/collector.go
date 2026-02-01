@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ilexum/tracium/internal/models"
+	"github.com/ilexum-group/tracium/internal/models"
 )
 
 // CollectSystemInfo collects basic system information

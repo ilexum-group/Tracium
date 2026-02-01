@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/ilexum/tracium/internal/forensics"
+	"github.com/ilexum-group/tracium/internal/forensics"
 )
 
 // TestCollectForensicsData tests the collection of forensic data
