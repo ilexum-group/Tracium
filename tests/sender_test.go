@@ -5,9 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ilexum/tracium/internal/config"
-	"github.com/ilexum/tracium/internal/models"
-	"github.com/ilexum/tracium/internal/sender"
+	"github.com/ilexum-group/tracium/internal/config"
+	"github.com/ilexum-group/tracium/internal/models"
+	"github.com/ilexum-group/tracium/internal/sender"
 )
 
 func TestSendDataSuccess(t *testing.T) {

@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	"github.com/ilexum/tracium/internal/config"
+	"github.com/ilexum-group/tracium/internal/config"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {

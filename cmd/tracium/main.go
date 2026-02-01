@@ -5,12 +5,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/ilexum/tracium/internal/collector"
-	"github.com/ilexum/tracium/internal/config"
-	"github.com/ilexum/tracium/internal/forensics"
-	"github.com/ilexum/tracium/internal/models"
-	"github.com/ilexum/tracium/internal/sender"
-	"github.com/ilexum/tracium/internal/utils"
+	"github.com/ilexum-group/tracium/internal/collector"
+	"github.com/ilexum-group/tracium/internal/config"
+	"github.com/ilexum-group/tracium/internal/forensics"
+	"github.com/ilexum-group/tracium/internal/models"
+	"github.com/ilexum-group/tracium/internal/sender"
+	"github.com/ilexum-group/tracium/internal/utils"
 )
 
 func main() {
