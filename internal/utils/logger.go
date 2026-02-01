@@ -1,4 +1,6 @@
 // Package utils provides utility functions and types for the Tracium agents
+//
+//nolint:revive // utils is a common pattern for internal utilities
 package utils
 
 import (
@@ -29,13 +31,10 @@ type RFC5424Logger struct {
 	logs      []string         // In-memory log buffer for server transmission
 }
 
-// NewRFC5424Logger creates a new RFC 5424 compliant logger using the crewjam/rfc5424 library
+// NewRFC5424Logger creates a new RFC 5424 compliant logger using the crewjam/rfc5424 library.
 func NewRFC5424Logger(appName string) (*RFC5424Logger, error) {
 	// Get hostname dynamically
-	hostname, err := getHostname()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get hostname: %w", err)
-	}
+	hostname := getHostname()
 
 	// Get process ID
 	processID := strconv.Itoa(os.Getpid())
@@ -49,13 +48,13 @@ func NewRFC5424Logger(appName string) (*RFC5424Logger, error) {
 	}, nil
 }
 
-// getHostname retrieves the system hostname dynamically
-func getHostname() (string, error) {
+// getHostname retrieves the system hostname dynamically.
+func getHostname() string {
 	hostname, err := os.Hostname()
 	if err != nil {
-		return "localhost", nil // Fallback
+		return "localhost" // Fallback
 	}
-	return hostname, nil
+	return hostname
 }
 
 // createMessage creates an RFC 5424 message using the library

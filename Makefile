@@ -38,45 +38,45 @@ test:
 
 # Build for current platform
 build:
-	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) -v ./cmd/tracium
+	$(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME) -v ./cmd/tracium
 
 # Build for Linux (default)
 build-linux: build-linux-amd64 build-linux-arm64
 
 build-linux-amd64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 -v ./cmd/tracium
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 -v ./cmd/tracium
 
 build-linux-arm64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 -v ./cmd/tracium
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 -v ./cmd/tracium
 
 build-linux-arm:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm -v ./cmd/tracium
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm $(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm -v ./cmd/tracium
 
 # Build for macOS (Darwin)
 build-darwin: build-darwin-amd64 build-darwin-arm64
 
 build-darwin-amd64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 -v ./cmd/tracium
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 -v ./cmd/tracium
 
 build-darwin-arm64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 -v ./cmd/tracium
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 -v ./cmd/tracium
 
 # Build for Windows
 build-windows: build-windows-amd64 build-windows-arm64
 
 build-windows-amd64:
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe -v ./cmd/tracium
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe -v ./cmd/tracium
 
 build-windows-arm64:
-	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe -v ./cmd/tracium
+	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 $(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe -v ./cmd/tracium
 
 # Build for FreeBSD
 build-freebsd-amd64:
-	CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-freebsd-amd64 -v ./cmd/tracium
+	CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 $(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME)-freebsd-amd64 -v ./cmd/tracium
 
 # Build for OpenBSD
 build-openbsd-amd64:
-	CGO_ENABLED=0 GOOS=openbsd GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-openbsd-amd64 -v ./cmd/tracium
+	CGO_ENABLED=0 GOOS=openbsd GOARCH=amd64 $(GOBUILD) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME)-openbsd-amd64 -v ./cmd/tracium
 
 # Build for all supported platforms
 build-all: build-linux build-darwin build-windows build-freebsd-amd64 build-openbsd-amd64

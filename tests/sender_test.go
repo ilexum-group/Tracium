@@ -5,9 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/tracium/internal/config"
-	"github.com/tracium/internal/models"
-	"github.com/tracium/internal/sender"
+	"github.com/ilexum/tracium/internal/config"
+	"github.com/ilexum/tracium/internal/models"
+	"github.com/ilexum/tracium/internal/sender"
 )
 
 func TestSendDataSuccess(t *testing.T) {
@@ -27,7 +27,7 @@ func TestSendDataSuccess(t *testing.T) {
 }
 
 func TestSendDataServerError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()

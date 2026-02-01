@@ -1,88 +1,181 @@
-# Tracium - Forensic Analysis and Monitoring Agent
+# Tracium
 
-## Overview
+## Description
 
-Tracium is a forensic analysis and monitoring agent designed for system evidence collection and transmission to a centralized server. The agent collects comprehensive system information and securely transmits it via HTTPS with Bearer Token authentication.
+Tracium is a forensic analysis and monitoring agent that collects comprehensive system information and forensic artifacts from endpoints. It operates across multiple platforms and transmits evidence securely to centralized analysis servers.
 
-## Supported Operating Systems
+## Purpose
 
-Tracium is developed in Go and supports cross-platform compilation for the following operating systems:
+Tracium acquires system-level forensic evidence including operating system details, hardware configuration, network information, running processes, browser history, command history, recent files, and other forensic artifacts. All collected data is transmitted via secure HTTPS to remote analysis servers for investigation.
 
-- Linux (x86_64, ARM64)
-- macOS (Intel, Apple Silicon)
-- Windows (x86_64, ARM64)
-- FreeBSD (x86_64)
-- OpenBSD (x86_64)
+## Problem It Solves
 
-## What It Collects
-
-The agent collects and transmits the following data:
-
-1. System Information: operating system, hostname, architecture, uptime, users
-2. Hardware Information: CPU model and cores, memory (total and used), disk partitions
-3. Network Information: active interfaces, IP addresses, MAC addresses, listening ports
-4. Security Information: running processes with resource usage, active system services
-5. Disk Imaging: optional forensic copies of disks with MD5 hash verification
-6. Forensic Artifacts: browser history, cookies, recent files, command history, downloads, network cache
-7. Execution Logs: RFC 5424 compliant logs of all agent operations and data collection steps
-
-All collected data, disk images, and execution logs are transmitted to the remote server via HTTPS.
+Incident response and forensic investigations require rapid collection of system artifacts from potentially compromised endpoints. Tracium provides a portable, cross-platform agent that systematically collects forensic evidence without requiring manual intervention, ensuring consistent data collection and secure transmission to centralized analysis platforms for correlation and investigation.
 
 ## Quick Start
 
+### Prerequisites
+- Go 1.25 or higher
+- Make utility
+
+### Building the Application
 ```bash
 git clone https://github.com/ilexum-group/tracium.git
 cd tracium
 make build
+```
 
-# Run with case ID
+### Running on Linux
+After building, run the application with:
+```bash
 ./build/tracium -case-id CASE-2026-001
 ```
 
-## Configuration
-
-Set the following environment variables before running the agent:
-
-```bash
-export TRACIUM_SERVER_URL="https://api.tracium.com/v1/data"
-export TRACIUM_AGENT_TOKEN="your-authentication-token"
-export TRACIUM_CASE_ID="CASE-2026-001"
+### Running on Windows CMD
+After building, run the application with:
+```cmd
+build\tracium.exe -case-id CASE-2026-001
 ```
 
-**Command-Line Flags:**
+## Configuration (CLI Flags)
+
+All runtime configuration is passed via CLI flags. Environment variables are not used for runtime behavior.
+
+**Flags:**
 
 ```
--case-id ID    Case identifier for correlation (overrides TRACIUM_CASE_ID)
+-server-url URL       Processor endpoint (default: https://api.tracium.com/v1/data)
+-agent-token TOKEN    Bearer token for authentication
+-case-id ID           Case identifier for correlation
+-enable-forensics     Enable forensic artifact collection (default: true)
+-disk-in-vm VALUE     Disk attached in VM (string: true/false)
 ```
+
+## Digital Evidence Custody Chain
+
+Tracium implements a comprehensive digital evidence custody chain for system forensics:
+
+### Custody Chain Features
+
+**Standardized Hash Algorithms:**
+- MD5 (128-bit) - Legacy compatibility
+- SHA1 (160-bit) - Legacy compatibility
+- SHA256 (256-bit) - Primary integrity verification
+- Hashes calculated for complete system data package
+
+**Comprehensive Logging:**
+- RFC 5424 compliant structured logs
+- All collection activities logged
+- Command executions tracked (if any)
+- Error and warning tracking
+
+**Custody Transfer Tracking:**
+- Initial system data collection
+- Transmission to Processor
+- Verification at each step
+
+**Rich Timeline Generation:**
+- Recent files accessed
+- Command history with timestamps
+- USB device connections
+- Program executions (prefetch)
+- File downloads and deletions
+- All formatted for TimeAnalysis
+
+**Forensic Artifacts:**
+- Browser history and databases
+- Command history (bash, PowerShell, cmd)
+- Recent files and downloads
+- USB device history
+- Prefetch files (Windows)
+- Recycle bin entries
+- Scheduled tasks
+- SSH keys and known hosts
+- Installed software
+
+**Processor Integration:**
+- SystemData with embedded custody chain
+- Automatic timeline extraction from artifacts
+- TimeAnalysis correlation across evidence sources
+
+### Usage Example
+
+```go
+// Create custody chain for system collection
+chain, _ := models.NewCustodyChainEntry(caseID, version)
+
+// Add log entries from logger
+for _, logEntry := range logger.GetLogs() {
+    chain.AddLogEntry(logEntry)
+}
+
+// Finalize with system data
+systemJSON, _ := json.Marshal(systemData)
+chain.Finalize(systemJSON, artifactCount)
+
+// Generate comprehensive timeline
+timeline := models.GenerateTimelineFromTracium(systemData)
+
+// Mark transmission
+chain.MarkTransmitted(processorURL, response)
+```
+
+### Timeline Events Captured
+
+Tracium generates timeline entries for:
+- **Recent Files**: Access timestamps from recent file lists
+- **Commands**: Execution timestamps from shell history
+- **Downloads**: Download timestamps and file access
+- **Deletions**: File deletion timestamps from recycle bin
+- **USB Devices**: Connection timestamps for USB history
+- **Program Execution**: Last run times from prefetch files
+- **Network Activity**: Connection timestamps (if available)
+
+All timeline entries include:
+- Precise UTC timestamp
+- Event type (created, modified, accessed, deleted, executed)
+- Source artifact (file_system, command_history, browser_history, etc.)
+- Description and artifact path
+- Associated user/process (when available)
+- Additional metadata (hash, size, etc.)
 
 **Example Usage:**
 
+### On Linux
 ```bash
-# Using command-line flag (recommended)
-./build/tracium -case-id CASE-2026-001
-
-# Using environment variable
-export TRACIUM_CASE_ID="CASE-2026-001"
-./build/tracium
-
-# Command-line flag takes precedence over environment variable
-export TRACIUM_CASE_ID="OLD-CASE"
-./build/tracium -case-id CASE-2026-001  # Uses CASE-2026-001
+./build/tracium \
+    -server-url http://localhost:8080/api/v1/tracium/data \
+    -agent-token your-authentication-token \
+    -case-id CASE-2026-001
 ```
 
-Optional configuration for disk imaging:
+### On Windows CMD
+```cmd
+build\tracium.exe -server-url http://localhost:8080/api/v1/tracium/data -agent-token your-authentication-token -case-id CASE-2026-001
+```
+
+
+
+Disk imaging and raw disk analysis are now performed exclusively by Bitex. Tracium does not access block devices or disk images directly.
+
+## Integration with Bitex
+
+To perform disk analysis, Tracium invokes Bitex as a CLI tool and consumes its JSON output. Bitex must be installed and available in the system PATH.
+
+### Example Integration
 
 ```bash
-export TRACIUM_ENABLE_DISK_IMAGING="true"
-export TRACIUM_DISK_PATH="/dev/sda"
-export TRACIUM_IMAGE_OUTPUT_DIR="/tmp/images"
+bitex --disk /path/to/disk.img > analysis.json
+# Tracium then reads analysis.json for reporting and correlation
 ```
+
+Configure Bitex separately for disk-level operations. Tracium is responsible only for orchestration, correlation, and reporting.
 
 Optional configuration for forensics:
 
 ```bash
 # Disable forensics collection (enabled by default)
-export TRACIUM_ENABLE_FORENSICS="false"
+./build/tracium -enable-forensics=false
 ```
 
 ## Documentation

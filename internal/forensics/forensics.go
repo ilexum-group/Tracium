@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tracium/internal/models"
-	"github.com/tracium/internal/utils"
+	"github.com/ilexum/tracium/internal/models"
+	"github.com/ilexum/tracium/internal/utils"
 )
 
 // CollectForensicsData collects all forensic artifacts
@@ -98,7 +99,7 @@ func collectBrowserDBFiles(errors *[]string) []models.ForensicFile {
 }
 
 // collectRecentFiles collects recently accessed files
-func collectRecentFiles(errors *[]string) []models.RecentFileEntry {
+func collectRecentFiles(_ *[]string) []models.RecentFileEntry {
 	files := make([]models.RecentFileEntry, 0)
 
 	switch runtime.GOOS {
@@ -184,7 +185,7 @@ func collectMacOSRecentFiles() []models.RecentFileEntry {
 }
 
 // collectCommandHistory collects shell command history
-func collectCommandHistory(errors *[]string) []models.CommandEntry {
+func collectCommandHistory(_ *[]string) []models.CommandEntry {
 	commands := make([]models.CommandEntry, 0)
 
 	switch runtime.GOOS {
@@ -207,6 +208,7 @@ func collectPowerShellHistory() []models.CommandEntry {
 	commands := make([]models.CommandEntry, 0)
 
 	historyPath := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt")
+	//nolint:gosec // G304: path constructed from trusted environment variable
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
 		return commands
@@ -239,6 +241,7 @@ func collectBashHistory() []models.CommandEntry {
 	}
 
 	historyPath := filepath.Join(homeDir, ".bash_history")
+	//nolint:gosec // G304: path constructed from trusted UserHomeDir
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
 		return commands
@@ -271,6 +274,7 @@ func collectZshHistory() []models.CommandEntry {
 	}
 
 	historyPath := filepath.Join(homeDir, ".zsh_history")
+	//nolint:gosec // G304: path constructed from trusted UserHomeDir
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
 		return commands
@@ -302,7 +306,7 @@ func collectZshHistory() []models.CommandEntry {
 }
 
 // collectNetworkHistory collects network connection history
-func collectNetworkHistory(errors *[]string) models.NetworkHistoryData {
+func collectNetworkHistory(_ *[]string) models.NetworkHistoryData {
 	networkHistory := models.NetworkHistoryData{
 		ARPCache: make([]models.ARPEntry, 0),
 		DNSCache: make([]models.DNSEntry, 0),
@@ -421,8 +425,6 @@ func collectDNSCache() []models.DNSEntry {
 					currentHost = strings.TrimSpace(parts[1])
 					currentIPs = make([]string, 0)
 				}
-			} else if strings.Contains(line, "A (Host) Record") || strings.Contains(line, "AAAA Record") {
-				// Next line will have IP
 			} else if strings.Contains(line, ":") && currentHost != "" {
 				parts := strings.Split(line, ":")
 				if len(parts) > 1 {
@@ -577,6 +579,7 @@ func copyArtifact(src, prefix, browser string) (*models.ForensicFile, error) {
 
 // copyFileWithHash copies a file to dst computing SHA-256 hash and returns size and hash
 func copyFileWithHash(src, dst string) (int64, string, error) {
+	//nolint:gosec // G304: src is from trusted forensics collection sources
 	sourceFile, err := os.Open(src)
 	if err != nil {
 		return 0, "", err
@@ -585,6 +588,7 @@ func copyFileWithHash(src, dst string) (int64, string, error) {
 		_ = sourceFile.Close()
 	}()
 
+	//nolint:gosec // G304: dst is controlled output path
 	destFile, err := os.Create(dst)
 	if err != nil {
 		return 0, "", err
@@ -609,6 +613,7 @@ func readFileWithLimit(path string, maxSize int64) (string, bool, error) {
 		return "", false, err
 	}
 
+	//nolint:gosec // G304: path is from trusted forensics collection sources
 	file, err := os.Open(path)
 	if err != nil {
 		return "", false, err
@@ -623,7 +628,7 @@ func readFileWithLimit(path string, maxSize int64) (string, bool, error) {
 
 	data := make([]byte, readSize)
 	n, err := io.ReadFull(file, data)
-	if err != nil && err != io.ErrUnexpectedEOF {
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return "", false, err
 	}
 
@@ -643,6 +648,7 @@ func collectSystemLogs(errors *[]string) []models.LogFile {
 		eventLogs := []string{"System", "Security", "Application"}
 		for _, logName := range eventLogs {
 			tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("%s_log_%d.txt", logName, time.Now().UnixNano()))
+			//nolint:gosec // G204: logName is from trusted list of system event logs
 			cmd := exec.Command("powershell", "-Command",
 				fmt.Sprintf("Get-EventLog -LogName %s -Newest 100 | Format-List | Out-File -FilePath '%s' -Encoding UTF8", logName, tempFile))
 			if err := cmd.Run(); err == nil {
@@ -705,7 +711,7 @@ func collectSystemLogs(errors *[]string) []models.LogFile {
 }
 
 // collectScheduledTasks collects scheduled tasks and cron jobs
-func collectScheduledTasks(errors *[]string) []models.ScheduledTask {
+func collectScheduledTasks(_ *[]string) []models.ScheduledTask {
 	tasks := make([]models.ScheduledTask, 0)
 
 	switch runtime.GOOS {
@@ -919,6 +925,7 @@ func collectHostsFile(errors *[]string) *models.ForensicFile {
 		return nil
 	}
 
+	//nolint:gosec // G304: hostsPath is trusted system file path
 	data, err := os.ReadFile(hostsPath)
 	if err != nil {
 		if errors != nil {
@@ -946,7 +953,7 @@ func collectHostsFile(errors *[]string) *models.ForensicFile {
 }
 
 // collectSSHKeys collects SSH key information
-func collectSSHKeys(errors *[]string) []models.SSHKeyInfo {
+func collectSSHKeys(_ *[]string) []models.SSHKeyInfo {
 	keys := make([]models.SSHKeyInfo, 0)
 
 	homeDir, err := os.UserHomeDir()
@@ -1005,7 +1012,7 @@ func collectSSHKeys(errors *[]string) []models.SSHKeyInfo {
 }
 
 // collectInstalledSoftware collects installed software information
-func collectInstalledSoftware(errors *[]string) []models.SoftwareInfo {
+func collectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 	software := make([]models.SoftwareInfo, 0)
 
 	switch runtime.GOOS {
@@ -1022,22 +1029,23 @@ func collectInstalledSoftware(errors *[]string) []models.SoftwareInfo {
 
 			for _, line := range lines {
 				line = strings.TrimSpace(line)
-				if strings.Contains(line, "\"DisplayName\"") {
+				switch {
+				case strings.Contains(line, "\"DisplayName\""):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						current.Name = strings.Trim(strings.TrimSuffix(parts[1], ","), " \"")
 					}
-				} else if strings.Contains(line, "\"DisplayVersion\"") {
+				case strings.Contains(line, "\"DisplayVersion\""):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						current.Version = strings.Trim(strings.TrimSuffix(parts[1], ","), " \"")
 					}
-				} else if strings.Contains(line, "\"Publisher\"") {
+				case strings.Contains(line, "\"Publisher\""):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						current.Publisher = strings.Trim(strings.TrimSuffix(parts[1], ","), " \"")
 					}
-				} else if strings.Contains(line, "\"InstallDate\"") {
+				case strings.Contains(line, "\"InstallDate\""):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						current.InstallDate = strings.Trim(strings.TrimSuffix(parts[1], ","), " \"")
@@ -1047,7 +1055,7 @@ func collectInstalledSoftware(errors *[]string) []models.SoftwareInfo {
 							current = models.SoftwareInfo{}
 						}
 					}
-				} else if line == "}" && current.Name != "" {
+				case line == "}" && current.Name != "":
 					current.Source = "registry"
 					software = append(software, current)
 					current = models.SoftwareInfo{}
@@ -1067,6 +1075,7 @@ func collectInstalledSoftware(errors *[]string) []models.SoftwareInfo {
 		}
 
 		for _, pm := range packageManagers {
+			//nolint:gosec // G204: pm.cmd and pm.args are from trusted package manager list
 			cmd := exec.Command(pm.cmd, pm.args...)
 			output, err := cmd.Output()
 			if err != nil {
@@ -1129,7 +1138,7 @@ func collectInstalledSoftware(errors *[]string) []models.SoftwareInfo {
 }
 
 // collectEnvironmentVariables collects environment variables
-func collectEnvironmentVariables(errors *[]string) map[string]string {
+func collectEnvironmentVariables(_ *[]string) map[string]string {
 	envVars := make(map[string]string)
 
 	for _, env := range os.Environ() {
@@ -1147,7 +1156,7 @@ func collectEnvironmentVariables(errors *[]string) map[string]string {
 }
 
 // collectRecentDownloads collects recently downloaded files
-func collectRecentDownloads(errors *[]string) []models.RecentFileEntry {
+func collectRecentDownloads(_ *[]string) []models.RecentFileEntry {
 	downloads := make([]models.RecentFileEntry, 0)
 
 	homeDir, err := os.UserHomeDir()
@@ -1207,7 +1216,7 @@ func collectRecentDownloads(errors *[]string) []models.RecentFileEntry {
 }
 
 // collectUSBHistory collects USB device connection history
-func collectUSBHistory(errors *[]string) []models.USBDevice {
+func collectUSBHistory(_ *[]string) []models.USBDevice {
 	devices := make([]models.USBDevice, 0)
 
 	switch runtime.GOOS {
@@ -1265,17 +1274,18 @@ func collectUSBHistory(errors *[]string) []models.USBDevice {
 
 			for scanner.Scan() {
 				line := strings.TrimSpace(scanner.Text())
-				if strings.Contains(line, "Product ID:") {
+				switch {
+				case strings.Contains(line, "Product ID:"):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						currentDevice.ProductID = strings.TrimSpace(parts[1])
 					}
-				} else if strings.Contains(line, "Vendor ID:") {
+				case strings.Contains(line, "Vendor ID:"):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						currentDevice.VendorID = strings.TrimSpace(parts[1])
 					}
-				} else if strings.Contains(line, "Serial Number:") {
+				case strings.Contains(line, "Serial Number:"):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						currentDevice.SerialNumber = strings.TrimSpace(parts[1])

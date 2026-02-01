@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tracium/internal/models"
+	"github.com/ilexum/tracium/internal/models"
 )
 
 // CollectSystemInfo collects basic system information
@@ -249,18 +249,19 @@ func getMemoryInfo() models.MemoryInfo {
 
 			for scanner.Scan() {
 				line := scanner.Text()
-				if strings.Contains(line, "page size of") {
+				switch {
+				case strings.Contains(line, "page size of"):
 					parts := strings.Fields(line)
 					if len(parts) > 7 {
 						pageSize, _ = strconv.ParseUint(parts[7], 10, 64)
 					}
-				} else if strings.HasPrefix(line, "Pages active:") {
+				case strings.HasPrefix(line, "Pages active:"):
 					parts := strings.Fields(line)
 					if len(parts) > 2 {
 						val := strings.TrimSuffix(parts[2], ".")
 						active, _ = strconv.ParseUint(val, 10, 64)
 					}
-				} else if strings.HasPrefix(line, "Pages wired down:") {
+				case strings.HasPrefix(line, "Pages wired down:"):
 					parts := strings.Fields(line)
 					if len(parts) > 3 {
 						val := strings.TrimSuffix(parts[3], ".")
@@ -358,6 +359,7 @@ func getDiskInfoLinux() []models.DiskInfo {
 			seen[mountPoint] = true
 
 			// Use df to get disk usage
+			//nolint:gosec // G204: mountPoint is validated from /etc/fstab
 			cmd := exec.Command("df", "-B1", mountPoint)
 			output, err := cmd.Output()
 			if err == nil {
@@ -424,20 +426,21 @@ func getDiskInfoWindows() []models.DiskInfo {
 
 			for _, line := range lines {
 				line = strings.TrimSpace(line)
-				if strings.Contains(line, `"Name"`) {
+				switch {
+				case strings.Contains(line, `"Name"`):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						name := strings.Trim(strings.TrimSuffix(parts[1], ","), ` "`)
 						currentDrive.Path = name + ":\\"
 					}
-				} else if strings.Contains(line, `"Total"`) {
+				case strings.Contains(line, `"Total"`):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						val := strings.TrimSuffix(strings.TrimSpace(parts[1]), ",")
 						total, _ := strconv.ParseUint(val, 10, 64)
 						currentDrive.Total = total
 					}
-				} else if strings.Contains(line, `"Used"`) {
+				case strings.Contains(line, `"Used"`):
 					parts := strings.Split(line, ":")
 					if len(parts) > 1 {
 						val := strings.TrimSpace(parts[1])
@@ -570,6 +573,7 @@ func getListeningPortsLinux(seen map[int]bool) []int {
 
 	// Parse /proc/net/tcp and /proc/net/tcp6
 	for _, file := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		//nolint:gosec // G304: /proc files are trusted system paths
 		data, err := os.ReadFile(file)
 		if err != nil {
 			continue
@@ -604,6 +608,7 @@ func getListeningPortsLinux(seen map[int]bool) []int {
 
 	// Also check UDP
 	for _, file := range []string{"/proc/net/udp", "/proc/net/udp6"} {
+		//nolint:gosec // G304: /proc files are trusted system paths
 		data, err := os.ReadFile(file)
 		if err != nil {
 			continue
@@ -965,13 +970,14 @@ func getServicesLinux() []models.ServiceInfo {
 		status := "unknown"
 		name := ""
 
-		if strings.Contains(line, "[+]") {
+		switch {
+		case strings.Contains(line, "[+]"):
 			status = "running"
 			name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "[+]"))
-		} else if strings.Contains(line, "[-]") {
+		case strings.Contains(line, "[-]"):
 			status = "stopped"
 			name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "[-]"))
-		} else if strings.Contains(line, "[?]") {
+		case strings.Contains(line, "[?]"):
 			status = "unknown"
 			name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "[?]"))
 		}
@@ -1067,7 +1073,8 @@ func getServicesWindows() []models.ServiceInfo {
 
 	for scanner.Scan() && count < 50 {
 		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "SERVICE_NAME:") {
+		switch {
+		case strings.HasPrefix(line, "SERVICE_NAME:"):
 			if currentService.Name != "" {
 				services = append(services, currentService)
 				count++
@@ -1075,14 +1082,15 @@ func getServicesWindows() []models.ServiceInfo {
 			currentService = models.ServiceInfo{
 				Name: strings.TrimSpace(strings.TrimPrefix(line, "SERVICE_NAME:")),
 			}
-		} else if strings.HasPrefix(line, "DISPLAY_NAME:") {
+		case strings.HasPrefix(line, "DISPLAY_NAME:"):
 			currentService.Description = strings.TrimSpace(strings.TrimPrefix(line, "DISPLAY_NAME:"))
-		} else if strings.Contains(line, "STATE") {
-			if strings.Contains(line, "RUNNING") {
+		case strings.Contains(line, "STATE"):
+			switch {
+			case strings.Contains(line, "RUNNING"):
 				currentService.Status = "running"
-			} else if strings.Contains(line, "STOPPED") {
+			case strings.Contains(line, "STOPPED"):
 				currentService.Status = "stopped"
-			} else {
+			default:
 				currentService.Status = "unknown"
 			}
 		}

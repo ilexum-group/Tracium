@@ -27,14 +27,14 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - name: Download dependencies
-      run: go mod download
+    - name: Vendor dependencies
+      run: go mod vendor
 
     - name: Run tests
-      run: go test -v ./tests/...
+      run: go test -mod=vendor -v ./tests/...
 
     - name: Run tests with coverage
-      run: go test -coverprofile=coverage.out ./tests/...
+      run: go test -mod=vendor -coverprofile=coverage.out ./tests/...
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5
@@ -63,14 +63,14 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - name: Download dependencies
-      run: go mod download
+    - name: Vendor dependencies
+      run: go mod vendor
 
     - name: Verify dependencies
       run: go mod verify
 
     - name: Build application
-      run: go build -v ./cmd/tracium
+      run: go build -mod=vendor -v ./cmd/tracium
 
     - name: Check formatting
       run: |
@@ -81,7 +81,7 @@ jobs:
         fi
 
     - name: Run go vet
-      run: go vet ./...
+      run: go vet -mod=vendor ./...
 
     - name: Run govulncheck
       uses: golang/govulncheck-action@v1

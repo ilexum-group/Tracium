@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/tracium/internal/models"
+	"github.com/ilexum/tracium/internal/models"
 )
 
 func TestSystemDataJSON(t *testing.T) {

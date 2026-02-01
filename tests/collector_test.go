@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	"github.com/tracium/internal/collector"
+	"github.com/ilexum/tracium/internal/collector"
 )
 
 func TestCollectSystemInfo(t *testing.T) {

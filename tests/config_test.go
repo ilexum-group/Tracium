@@ -1,20 +1,16 @@
 package tests
 
 import (
-	"os"
 	"testing"
 
-	"github.com/tracium/internal/config"
+	"github.com/ilexum/tracium/internal/config"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
-	if err := os.Unsetenv("TRACIUM_SERVER_URL"); err != nil {
-		t.Logf("Warning: failed to unset TRACIUM_SERVER_URL: %v", err)
+	cfg, err := config.LoadFromFlags([]string{})
+	if err != nil {
+		t.Fatalf("Failed to load config from flags: %v", err)
 	}
-	if err := os.Unsetenv("TRACIUM_AGENT_TOKEN"); err != nil {
-		t.Logf("Warning: failed to unset TRACIUM_AGENT_TOKEN: %v", err)
-	}
-	cfg := config.Load()
 	if cfg.ServerURL != "https://api.tracium.com/v1/data" {
 		t.Errorf("Expected default server URL, got %s", cfg.ServerURL)
 	}
@@ -23,18 +19,26 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadConfigEnvVars(t *testing.T) {
-	if err := os.Setenv("TRACIUM_SERVER_URL", "http://localhost:8080"); err != nil {
-		t.Fatalf("Failed to set TRACIUM_SERVER_URL: %v", err)
+func TestLoadConfigFlags(t *testing.T) {
+	cfg, err := config.LoadFromFlags([]string{
+		"-server-url", "http://localhost:8080",
+		"-agent-token", "testtoken",
+		"-case-id", "CASE-2026-001",
+		"-enable-forensics=false",
+	})
+	if err != nil {
+		t.Fatalf("Failed to load config from flags: %v", err)
 	}
-	if err := os.Setenv("TRACIUM_AGENT_TOKEN", "testtoken"); err != nil {
-		t.Fatalf("Failed to set TRACIUM_AGENT_TOKEN: %v", err)
-	}
-	cfg := config.Load()
 	if cfg.ServerURL != "http://localhost:8080" {
-		t.Errorf("Expected env server URL, got %s", cfg.ServerURL)
+		t.Errorf("Expected flag server URL, got %s", cfg.ServerURL)
 	}
 	if cfg.AgentToken != "testtoken" {
-		t.Errorf("Expected env agent token, got %s", cfg.AgentToken)
+		t.Errorf("Expected flag agent token, got %s", cfg.AgentToken)
+	}
+	if cfg.CaseID != "CASE-2026-001" {
+		t.Errorf("Expected case ID, got %s", cfg.CaseID)
+	}
+	if cfg.EnableForensics {
+		t.Errorf("Expected enable-forensics=false, got true")
 	}
 }

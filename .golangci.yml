@@ -7,9 +7,52 @@ run:
 
 linters:
   enable:
-    - govet
-    - staticcheck
-    - errcheck
-    - gocyclo
-    - dupl
-    - unused
+    - govet          # Vet examines Go source code and reports suspicious constructs
+    - staticcheck    # Static analysis checks
+    - errcheck       # Checks for unchecked errors
+    - gocyclo        # Computes and checks cyclomatic complexity
+    - dupl           # Tool for code clone detection
+    - unused         # Checks for unused constants, variables, functions and types
+    - revive         # Fast, configurable, extensible, flexible, and beautiful linter (replaces golint)
+    - ineffassign    # Detects ineffectual assignments
+    - misspell       # Finds commonly misspelled English words in comments
+    - unconvert      # Remove unnecessary type conversions
+    - gocritic       # Provides diagnostics that check for bugs, performance and style issues
+    - gosec          # Inspects source code for security problems
+    - unparam        # Reports unused function parameters
+    - errname        # Checks that sentinel errors are prefixed with Err
+    - errorlint      # Error wrapping scheme checks
+  disable:
+    - godot          # Too strict for technical documentation
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+      - name: var-naming
+        severity: warning
+        disabled: true  # Allow utils and other common package names
+      - name: package-comments
+        severity: warning
+        disabled: false
+  gocyclo:
+    min-complexity: 15
+  dupl:
+    threshold: 100
+  gosec:
+    excludes:
+      - G401  # MD5/SHA1 used for forensic compatibility
+      - G501  # MD5 import for forensic compatibility
+      - G505  # SHA1 import for forensic compatibility
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: internal/utils/logger\.go
+      linters:
+        - revive
+      text: "var-naming: avoid meaningless package names"

@@ -1,103 +1,45 @@
-# Tracium Architecture Documentation
+# Tracium Architecture
 
-## Table of Contents
+## Overview
 
-1. [Data Transmission Model](#data-transmission-model)
-2. [Logging System](#logging-system)
-3. [Sequence Diagram](#sequence-diagram)
-4. [Data Structures](#data-structures)
+Tracium follows a modular architecture separating data collection, forensic artifact extraction, and secure transmission. The system collects comprehensive system and forensic evidence with RFC 5424 compliant logging.
 
----
+## Directory Structure
 
-## Data Transmission Model
+### `cmd/tracium/`
+Command-line interface and application entry point. Handles flag parsing, configuration validation, and orchestrates the collection workflow.
 
-### Overview
+### `internal/collector/`
+System data collection module. Gathers operating system information, hardware details, network configuration, running processes, and active services. Coordinates calls to specialized collectors.
 
-Tracium uses a secure HTTP(S) protocol with Bearer Token authentication to transmit collected forensic data to a central server. The transmission is a single POST request containing all collected data in JSON format.
+### `internal/forensics/`
+Forensic artifact collection module. Extracts browser history, cookies, command history, recent files, download records, ARP cache, and DNS cache from various applications and operating system locations.
 
-### Protocol Specifications
+### `internal/sender/`
+Secure data transmission module. Handles HTTPS communication with Processor backend, Bearer token authentication, intelligent chunking for large payloads, and transmission verification.
 
-| Aspect | Details |
-|--------|---------|
-| **Protocol** | HTTP/HTTPS |
-| **Method** | POST |
-| **Content-Type** | application/json |
-| **Authentication** | Bearer Token (HTTP Header) |
-| **Encryption** | TLS/SSL (HTTPS recommended) |
-| **Response Expected** | HTTP 200 OK |
+### `internal/config/`
+Configuration management. Parses CLI flags, validates parameters, and provides centralized configuration access throughout the application.
 
-### Request Structure
+### `internal/models/`
+Data structures and type definitions. Defines SystemData, ForensicsData, and related structures used for evidence collection and transmission.
 
-#### Headers
+### `internal/logger/`
+RFC 5424 compliant logging system. Captures all operations with structured metadata, maintains in-memory log buffer for transmission to analysis servers.
 
-```http
-POST /v1/data HTTP/1.1
-Host: api.tracium.com
-Content-Type: application/json
-Authorization: Bearer <AGENT_TOKEN>
-User-Agent: Tracium-Agent/1.0
-Content-Length: <payload_size>
-```
+### `internal/utils/`
+Shared utility functions for file operations, path handling, and common system tasks.
 
-- **Content-Type**: Always `application/json`
-- **Authorization**: Format is `Bearer {token}` where token is configured via `TRACIUM_AGENT_TOKEN`
-- **User-Agent**: Identifies the client as Tracium Agent version 1.0
+## Data Flow
 
-#### Request Body Structure
-
-```json
-{
-  "timestamp": 1735961234,
-  "system": {
-    "os": "linux",
-    "hostname": "server01",
-    "architecture": "amd64",
-    "uptime": 3600,
-    "users": ["root", "admin"]
-  },
-  "hardware": {
-    "cpu": {
-      "model": "Intel Core i7",
-      "cores": 8
-    },
-    "memory": {
-      "total": 17179869184,
-      "used": 8589934592
-    },
-    "disk": [
-      {
-        "path": "/",
-        "total": 536870912000,
-        "used": 214748364800,
-        "filesystem": "ext4"
-      }
-    ]
-  },
-  "network": {
-    "interfaces": [
-      {
-        "name": "eth0",
-        "ips": ["192.168.1.10"],
-        "mac": "00:1a:2b:3c:4d:5e"
-      }
-    ],
-    "listening_ports": [22, 80, 443]
-  },
-  "security": {
-    "processes": [
-      {
-        "pid": 1,
-        "name": "systemd",
-        "user": "root",
-        "cpu": 0.1,
-        "memory": 1048576
-      }
-    ],
-    "services": [
-      {
-        "name": "sshd",
-        "status": "running",
-        "description": "OpenSSH server"
+1. CLI parses configuration flags
+2. Collector gathers system information (OS, hardware, network, security)
+3. Forensics module extracts artifacts (browser data, command history)
+4. Logger captures all operations with RFC 5424 formatting
+5. Sender packages complete payload (data + logs)
+6. Intelligent chunking for large payloads (>100 MB)
+7. Secure transmission to Processor via HTTPS
+8. Verification and error handling
       }
     ]
   },
@@ -167,8 +109,8 @@ Content-Length: <payload_size>
 
 ```
 1. Agent loads configuration
-   ├── Read TRACIUM_SERVER_URL from environment
-   └── Read TRACIUM_AGENT_TOKEN from environment
+  ├── Read -server-url flag
+  └── Read -agent-token flag
 
 2. Agent collects data
    ├── System information
@@ -181,8 +123,8 @@ Content-Length: <payload_size>
    └── Validates JSON structure
 
 4. Agent creates HTTP request
-   ├── Sets method to POST
-   ├── Sets URL to TRACIUM_SERVER_URL
+  ├── Sets method to POST
+  ├── Sets URL to -server-url
    ├── Sets headers (Content-Type, Authorization, User-Agent)
    └── Attaches JSON payload
 
@@ -218,14 +160,10 @@ Each transmission attempt is logged:
 
 ### Configuration
 
-Transmission is configured via environment variables:
+Transmission is configured via CLI flags:
 
 ```bash
-# Server endpoint (required)
-export TRACIUM_SERVER_URL="https://api.tracium.com/v1/data"
-
-# Authentication token (required)
-export TRACIUM_AGENT_TOKEN="your-secret-token-here"
+./tracium -server-url https://api.tracium.com/v1/data -agent-token your-secret-token-here
 ```
 
 ### Payload Size Considerations
@@ -484,8 +422,8 @@ Agent Start
     │           └─ LOG: "Starting Tracium agent"
     │
     ├─► Load Configuration
-    │   ├─► Read TRACIUM_SERVER_URL
-    │   ├─► Read TRACIUM_AGENT_TOKEN
+    │   ├─► Read -server-url flag
+    │   ├─► Read -agent-token flag
     │   └─ LOG: "Configuration loaded"
     │
     ├─► Collect Data
