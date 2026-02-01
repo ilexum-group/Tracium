@@ -1,4 +1,4 @@
-module github.com/ilexum/tracium
+module github.com/ilexum-group/tracium
 
 go 1.25
 
