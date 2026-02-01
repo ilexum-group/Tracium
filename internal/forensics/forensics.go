@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ilexum-group/tracium/internal/models"
 	"github.com/ilexum-group/tracium/internal/utils"
+	"github.com/ilexum-group/tracium/pkg/models"
 )
 
 // CollectForensicsData collects all forensic artifacts

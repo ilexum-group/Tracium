@@ -9,8 +9,8 @@ import (
 	"net/http"
 
 	"github.com/ilexum-group/tracium/internal/config"
-	"github.com/ilexum-group/tracium/internal/models"
 	"github.com/ilexum-group/tracium/internal/utils"
+	"github.com/ilexum-group/tracium/pkg/models"
 )
 
 const (

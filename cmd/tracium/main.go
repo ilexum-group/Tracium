@@ -8,9 +8,9 @@ import (
 	"github.com/ilexum-group/tracium/internal/collector"
 	"github.com/ilexum-group/tracium/internal/config"
 	"github.com/ilexum-group/tracium/internal/forensics"
-	"github.com/ilexum-group/tracium/internal/models"
 	"github.com/ilexum-group/tracium/internal/sender"
 	"github.com/ilexum-group/tracium/internal/utils"
+	"github.com/ilexum-group/tracium/pkg/models"
 )
 
 func main() {
