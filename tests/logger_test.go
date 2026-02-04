@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ilexum-group/tracium/internal/utils"
+	"github.com/ilexum-group/tracium/internal/logger"
 )
 
 func TestRFC5424Logger(t *testing.T) {
 	// Initialize the logger
-	err := utils.InitDefaultLogger()
+	err := logger.InitDefaultLogger("Tracium", "testhost", "12345")
 	if err != nil {
 		t.Fatalf("Failed to initialize logger: %v", err)
 	}
@@ -21,10 +21,10 @@ func TestRFC5424Logger(t *testing.T) {
 	os.Stdout = w
 
 	// Test different log levels
-	utils.LogInfo("Test info message", map[string]string{"test": "true", "level": "info"})
-	utils.LogWarn("Test warning message", map[string]string{"test": "true", "level": "warn"})
-	utils.LogError("Test error message", map[string]string{"test": "true", "level": "error"})
-	utils.LogDebug("Test debug message", map[string]string{"test": "true", "level": "debug"})
+	logger.LogInfo("Test info message", map[string]string{"test": "true", "level": "info"})
+	logger.LogWarn("Test warning message", map[string]string{"test": "true", "level": "warn"})
+	logger.LogError("Test error message", map[string]string{"test": "true", "level": "error"})
+	logger.LogDebug("Test debug message", map[string]string{"test": "true", "level": "debug"})
 
 	// Restore stdout
 	err = w.Close()
@@ -56,7 +56,7 @@ func TestRFC5424Logger(t *testing.T) {
 }
 
 func TestLoggerWithoutMetadata(t *testing.T) {
-	err := utils.InitDefaultLogger()
+	err := logger.InitDefaultLogger("Tracium", "testhost", "12345")
 	if err != nil {
 		t.Fatalf("Failed to initialize logger: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestLoggerWithoutMetadata(t *testing.T) {
 	os.Stdout = w
 
 	// Test logging without metadata
-	utils.LogInfo("Simple message", nil)
+	logger.LogInfo("Simple message", nil)
 
 	// Restore stdout
 	err = w.Close()
@@ -91,25 +91,21 @@ func TestLoggerWithoutMetadata(t *testing.T) {
 	}
 }
 
-func TestLogCapture(t *testing.T) {
-	// Re-initialize logger to start fresh
-	err := utils.InitDefaultLogger()
+func TestLoggerMultipleMessages(t *testing.T) {
+	err := logger.InitDefaultLogger("Tracium", "testhost", "12345")
 	if err != nil {
 		t.Fatalf("Failed to initialize logger: %v", err)
 	}
 
-	// Clear any existing logs
-	utils.ClearLogs()
-
-	// Suppress stdout for cleaner test output
+	// Capture stdout
 	oldStdout := os.Stdout
-	_, w, _ := os.Pipe()
+	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	// Log several messages
-	utils.LogInfo("Test message 1", map[string]string{"id": "1"})
-	utils.LogWarn("Test message 2", map[string]string{"id": "2"})
-	utils.LogError("Test message 3", map[string]string{"id": "3"})
+	// Log multiple messages
+	logger.LogInfo("First message", map[string]string{"seq": "1"})
+	logger.LogInfo("Second message", map[string]string{"seq": "2"})
+	logger.LogInfo("Third message", map[string]string{"seq": "3"})
 
 	// Restore stdout
 	err = w.Close()
@@ -118,28 +114,21 @@ func TestLogCapture(t *testing.T) {
 	}
 	os.Stdout = oldStdout
 
-	// Get captured logs
-	logs := utils.GetLogs()
+	// Read output
+	output := make([]byte, 2048)
+	n, _ := r.Read(output)
+	logOutput := string(output[:n])
 
-	// Verify logs were captured
-	if len(logs) < 3 {
-		t.Errorf("Expected at least 3 logs, got %d. Logs: %v", len(logs), logs)
+	// Verify all messages are present
+	if !strings.Contains(logOutput, "First message") {
+		t.Error("Missing first message")
+	}
+	if !strings.Contains(logOutput, "Second message") {
+		t.Error("Missing second message")
+	}
+	if !strings.Contains(logOutput, "Third message") {
+		t.Error("Missing third message")
 	}
 
-	// Verify log content (should be RFC 5424 formatted)
-	for i, log := range logs {
-		if !strings.Contains(log, "Tracium") {
-			t.Errorf("Log %d missing app name: %s", i, log)
-		}
-		if !strings.Contains(log, "<") {
-			t.Errorf("Log %d missing priority format: %s", i, log)
-		}
-	}
-
-	// Test ClearLogs
-	utils.ClearLogs()
-	logsAfterClear := utils.GetLogs()
-	if len(logsAfterClear) != 0 {
-		t.Errorf("Expected 0 logs after clear, got %d", len(logsAfterClear))
-	}
+	t.Logf("Successfully logged %d messages", 3)
 }

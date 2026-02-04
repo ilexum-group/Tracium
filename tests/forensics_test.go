@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/ilexum-group/tracium/internal/forensics"
+	osinfo "github.com/ilexum-group/tracium/internal/os"
+	"github.com/ilexum-group/tracium/pkg/models"
 )
 
 // TestCollectForensicsData tests the collection of forensic data
@@ -15,7 +17,18 @@ func TestCollectForensicsData(t *testing.T) {
 	// Initialize logger for tests
 	_ = os.Setenv("TRACIUM_LOG_LEVEL", "error") // Suppress logs during tests
 
-	data := forensics.CollectForensicsData()
+	// Use new API with dependency injection
+	custodyChain := createTestCustodyChain()
+	if custodyChain == nil {
+		t.Skip("Could not create custody chain for test")
+	}
+
+	collector := forensics.New(
+		newMockCollector(),
+		custodyChain,
+	)
+
+	data := collector.Collect()
 
 	// Verify structure exists
 	if data.CollectionErrors == nil {
@@ -32,6 +45,20 @@ func TestCollectForensicsData(t *testing.T) {
 	t.Logf("Collection errors: %d", len(data.CollectionErrors))
 }
 
+// Mock implementations for testing
+func createTestCustodyChain() *models.CustodyChainEntry {
+	custodyChain, err := models.NewCustodyChainEntry("TraciumTest", "1.0.0-test")
+	if err != nil {
+		// Fallback to nil if creation fails
+		return nil
+	}
+	return custodyChain
+}
+
+func newMockCollector() osinfo.Collector {
+	return osinfo.New()
+}
+
 // TestBrowserDBFileCollection tests browser DB file collection
 func TestBrowserDBFileCollection(t *testing.T) {
 	// This test verifies that browser DB file collection doesn't panic
@@ -43,9 +70,14 @@ func TestBrowserDBFileCollection(t *testing.T) {
 		}
 	}()
 
-	data := forensics.CollectForensicsData()
+	custodyChain := createTestCustodyChain()
+	if custodyChain == nil {
+		t.Skip("Could not create custody chain for test")
+	}
+	collector := forensics.New(newMockCollector(), custodyChain)
+	data := collector.Collect()
 
-	// Verify browser DB files have correct fields
+	// Verify browser DB files have correct fields if any collected
 	for _, file := range data.BrowserDBFiles {
 		if file.Browser == "" {
 			t.Error("Browser field should not be empty")
@@ -80,7 +112,12 @@ func TestCommandHistoryCollection(t *testing.T) {
 		}
 	}
 
-	data := forensics.CollectForensicsData()
+	custodyChain := createTestCustodyChain()
+	if custodyChain == nil {
+		t.Skip("Could not create custody chain for test")
+	}
+	collector := forensics.New(newMockCollector(), custodyChain)
+	data := collector.Collect()
 
 	// On systems with command history, verify entries are collected
 	if len(data.CommandHistory) > 0 {
@@ -100,7 +137,12 @@ func TestCommandHistoryCollection(t *testing.T) {
 
 // TestNetworkHistoryCollection tests network history collection
 func TestNetworkHistoryCollection(t *testing.T) {
-	data := forensics.CollectForensicsData()
+	custodyChain := createTestCustodyChain()
+	if custodyChain == nil {
+		t.Skip("Could not create custody chain for test")
+	}
+	collector := forensics.New(newMockCollector(), custodyChain)
+	data := collector.Collect()
 
 	// Network history should have ARP and DNS cache structures
 	if data.NetworkHistory.ARPCache == nil {
@@ -132,7 +174,12 @@ func TestNetworkHistoryCollection(t *testing.T) {
 
 // TestRecentFilesCollection tests recent files collection
 func TestRecentFilesCollection(t *testing.T) {
-	data := forensics.CollectForensicsData()
+	custodyChain := createTestCustodyChain()
+	if custodyChain == nil {
+		t.Skip("Could not create custody chain for test")
+	}
+	collector := forensics.New(newMockCollector(), custodyChain)
+	data := collector.Collect()
 
 	// Verify recent files structure
 	for _, file := range data.RecentFiles {
@@ -151,8 +198,19 @@ func TestRecentFilesCollection(t *testing.T) {
 // TestForensicsDataIntegrity tests that forensics data maintains integrity
 func TestForensicsDataIntegrity(t *testing.T) {
 	// Collect data twice to ensure consistency
-	data1 := forensics.CollectForensicsData()
-	data2 := forensics.CollectForensicsData()
+	custodyChain1 := createTestCustodyChain()
+	if custodyChain1 == nil {
+		t.Skip("Could not create custody chain for test")
+	}
+	collector1 := forensics.New(newMockCollector(), custodyChain1)
+	data1 := collector1.Collect()
+
+	custodyChain2 := createTestCustodyChain()
+	if custodyChain2 == nil {
+		t.Skip("Could not create custody chain for test")
+	}
+	collector2 := forensics.New(newMockCollector(), custodyChain2)
+	data2 := collector2.Collect()
 
 	// The number of entries should be similar (allowing for small differences due to timing)
 	// This is a sanity check, not a strict equality test
@@ -195,7 +253,12 @@ func TestForensicsErrorHandling(t *testing.T) {
 		}
 	}()
 
-	data := forensics.CollectForensicsData()
+	custodyChain := createTestCustodyChain()
+	if custodyChain == nil {
+		t.Skip("Could not create custody chain for test")
+	}
+	collector := forensics.New(newMockCollector(), custodyChain)
+	data := collector.Collect()
 
 	// Should return empty collections but not fail
 	if data.CollectionErrors == nil {

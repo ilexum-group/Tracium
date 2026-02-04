@@ -9,7 +9,7 @@ import (
 
 func TestSystemDataJSON(t *testing.T) {
 	data := models.SystemData{
-		Timestamp: 1234567890,
+		CaseID: "CASE-2026-001",
 		System: models.SystemInfo{
 			OS:           "linux",
 			Hostname:     "testhost",

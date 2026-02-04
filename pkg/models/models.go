@@ -3,17 +3,13 @@ package models
 
 // SystemData represents the complete data collected by the agent
 type SystemData struct {
-	Timestamp int64         `json:"timestamp"`
-	CaseID    string        `json:"case_id"` // Case identifier for correlation
-	System    SystemInfo    `json:"system"`
-	Hardware  HardwareInfo  `json:"hardware"`
-	Network   NetworkInfo   `json:"network"`
-	Security  SecurityInfo  `json:"security"`
-	Logs      []string      `json:"logs"`
-	Forensics ForensicsData `json:"forensics"`
-
-	// Custody Chain - Complete digital evidence custody tracking
-	CustodyChain *CustodyChainEntry `json:"custody_chain"`
+	CaseID       string             `json:"case_id"` // Case identifier for correlation
+	System       SystemInfo         `json:"system"`
+	Hardware     HardwareInfo       `json:"hardware"`
+	Network      NetworkInfo        `json:"network"`
+	Security     SecurityInfo       `json:"security"`
+	Forensics    ForensicsData      `json:"forensics"`
+	CustodyChain *CustodyChainEntry `json:"custody_chain"` // Custody Chain - Complete digital evidence custody tracking
 }
 
 // SystemInfo holds basic system information

@@ -9,8 +9,8 @@ Tracium follows a modular architecture separating data collection, forensic arti
 ### `cmd/tracium/`
 Command-line interface and application entry point. Handles flag parsing, configuration validation, and orchestrates the collection workflow.
 
-### `internal/collector/`
-System data collection module. Gathers operating system information, hardware details, network configuration, running processes, and active services. Coordinates calls to specialized collectors.
+### `internal/acquisition/`
+System data collection module. Gathers operating system information, hardware details, network configuration, running processes, and active services. Coordinates calls to OS-specific collectors.
 
 ### `internal/forensics/`
 Forensic artifact collection module. Extracts browser history, cookies, command history, recent files, download records, ARP cache, and DNS cache from various applications and operating system locations.
@@ -21,25 +21,30 @@ Secure data transmission module. Handles HTTPS communication with Processor back
 ### `internal/config/`
 Configuration management. Parses CLI flags, validates parameters, and provides centralized configuration access throughout the application.
 
-### `internal/models/`
-Data structures and type definitions. Defines SystemData, ForensicsData, and related structures used for evidence collection and transmission.
+### `pkg/models/`
+Data structures and type definitions. Defines SystemData, ForensicsData, CustodyChainEntry, and related structures used for evidence collection, transmission, and chain of custody tracking.
 
 ### `internal/logger/`
 RFC 5424 compliant logging system. Captures all operations with structured metadata, maintains in-memory log buffer for transmission to analysis servers.
+
+### `internal/os/`
+OS-specific implementations and system primitives. Provides unified interface (Collector) with platform-specific implementations for Windows, Linux, macOS, FreeBSD, and OpenBSD. Includes LoggingCollector wrapper for automatic operation logging.
 
 ### `internal/utils/`
 Shared utility functions for file operations, path handling, and common system tasks.
 
 ## Data Flow
 
-1. CLI parses configuration flags
-2. Collector gathers system information (OS, hardware, network, security)
-3. Forensics module extracts artifacts (browser data, command history)
-4. Logger captures all operations with RFC 5424 formatting
-5. Sender packages complete payload (data + logs)
-6. Intelligent chunking for large payloads (>100 MB)
-7. Secure transmission to Processor via HTTPS
-8. Verification and error handling
+1. CLI parses configuration flags (config module)
+2. Custody chain initialization with agent metadata
+3. OS-specific collector instantiation with logging wrapper
+4. Acquisition module gathers system information (OS, hardware, network, security)
+5. Forensics module extracts artifacts (browser data, command history, logs)
+6. Logger captures all operations with RFC 5424 formatting
+7. Sender packages complete payload (data + custody chain + logs)
+8. Intelligent chunking for large payloads (>100 MB)
+9. Secure transmission to server via HTTPS with bearer token
+10. Verification and error handling
       }
     ]
   },
@@ -109,8 +114,8 @@ Shared utility functions for file operations, path handling, and common system t
 
 ```
 1. Agent loads configuration
-  ├── Read -server-url flag
-  └── Read -agent-token flag
+  ├── Read --server flag
+  └── Read --token flag
 
 2. Agent collects data
    ├── System information
@@ -124,7 +129,7 @@ Shared utility functions for file operations, path handling, and common system t
 
 4. Agent creates HTTP request
   ├── Sets method to POST
-  ├── Sets URL to -server-url
+  ├── Sets URL to --server value
    ├── Sets headers (Content-Type, Authorization, User-Agent)
    └── Attaches JSON payload
 
@@ -163,7 +168,7 @@ Each transmission attempt is logged:
 Transmission is configured via CLI flags:
 
 ```bash
-./tracium -server-url https://api.tracium.com/v1/data -agent-token your-secret-token-here
+./tracium --server https://api.tracium.com/v1/data --token your-secret-token-here --case-id CASE-ID
 ```
 
 ### Payload Size Considerations
@@ -422,8 +427,9 @@ Agent Start
     │           └─ LOG: "Starting Tracium agent"
     │
     ├─► Load Configuration
-    │   ├─► Read -server-url flag
-    │   ├─► Read -agent-token flag
+    │   ├─► Read --server flag
+    │   ├─► Read --token flag
+    │   ├─► Read --case-id flag
     │   └─ LOG: "Configuration loaded"
     │
     ├─► Collect Data
