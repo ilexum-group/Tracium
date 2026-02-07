@@ -21,13 +21,21 @@ type FreeBSD struct {
 
 // NewFreeBSD creates a new FreeBSD instance
 func NewFreeBSD() Collector {
+	return NewFreeBSDWithDefault(NewDefault())
+}
+
+// NewFreeBSDWithDefault creates a new FreeBSD instance with a provided Default.
+func NewFreeBSDWithDefault(def *Default) Collector {
 	return &FreeBSD{
-		Default: NewDefault(),
+		Default: def,
 	}
 }
 
 // GetCurrentUser returns the current user name
 func (f *FreeBSD) GetCurrentUser() (string, error) {
+	if !f.IsLive() {
+		return "unknown", nil
+	}
 	currentUser, err := f.UserCurrent()
 	username := ""
 	if err == nil {
@@ -38,6 +46,9 @@ func (f *FreeBSD) GetCurrentUser() (string, error) {
 
 // GetUptime returns the system uptime in seconds
 func (f *FreeBSD) GetUptime() int64 {
+	if !f.IsLive() {
+		return 0
+	}
 	return getBSDUptime(f)
 }
 
@@ -48,32 +59,48 @@ func (f *FreeBSD) GetUsers() []string {
 
 // GetCPUInfo returns CPU information
 func (f *FreeBSD) GetCPUInfo() models.CPUInfo {
+	if !f.IsLive() {
+		return models.CPUInfo{}
+	}
 	return getBSDCPUInfo(f)
 }
 
 // GetMemoryInfo returns memory information
 func (f *FreeBSD) GetMemoryInfo() models.MemoryInfo {
+	if !f.IsLive() {
+		return models.MemoryInfo{}
+	}
 	return getBSDMemoryInfo(f)
 }
 
 // GetDiskInfo returns disk information
 func (f *FreeBSD) GetDiskInfo() []models.DiskInfo {
+	if !f.IsLive() {
+		return []models.DiskInfo{}
+	}
 	return getBSDDiskInfo(f)
 }
 
 // GetListeningPorts returns listening ports
 func (f *FreeBSD) GetListeningPorts(seen map[int]bool) []int {
+	if !f.IsLive() {
+		return []int{}
+	}
 	return getUnixListeningPorts(f, seen)
 }
 
-// GetProcesses returns running processes
 func (f *FreeBSD) GetProcesses() []models.ProcessInfo {
+	if !f.IsLive() {
+		return []models.ProcessInfo{}
+	}
 	return getBSDProcesses(f)
 }
 
-// GetServices returns system services
 func (f *FreeBSD) GetServices() []models.ServiceInfo {
 	var services []models.ServiceInfo
+	if !f.IsLive() {
+		return collectBSDServiceConfig(f)
+	}
 	cmd := f.ExecCommand("service", "-e")
 	output, err := cmd.Output()
 	if err != nil {
@@ -105,13 +132,21 @@ type OpenBSD struct {
 
 // NewOpenBSD creates a new OpenBSD instance
 func NewOpenBSD() Collector {
+	return NewOpenBSDWithDefault(NewDefault())
+}
+
+// NewOpenBSDWithDefault creates a new OpenBSD instance with a provided Default.
+func NewOpenBSDWithDefault(def *Default) Collector {
 	return &OpenBSD{
-		Default: NewDefault(),
+		Default: def,
 	}
 }
 
 // GetCurrentUser returns the current user name
 func (o *OpenBSD) GetCurrentUser() (string, error) {
+	if !o.IsLive() {
+		return "unknown", nil
+	}
 	currentUser, err := o.UserCurrent()
 	if err != nil {
 		return "", err
@@ -122,6 +157,9 @@ func (o *OpenBSD) GetCurrentUser() (string, error) {
 
 // GetUptime returns the system uptime in seconds
 func (o *OpenBSD) GetUptime() int64 {
+	if !o.IsLive() {
+		return 0
+	}
 	return getBSDUptime(o)
 }
 
@@ -132,32 +170,48 @@ func (o *OpenBSD) GetUsers() []string {
 
 // GetCPUInfo returns CPU information
 func (o *OpenBSD) GetCPUInfo() models.CPUInfo {
+	if !o.IsLive() {
+		return models.CPUInfo{}
+	}
 	return getBSDCPUInfo(o)
 }
 
 // GetMemoryInfo returns memory information
 func (o *OpenBSD) GetMemoryInfo() models.MemoryInfo {
+	if !o.IsLive() {
+		return models.MemoryInfo{}
+	}
 	return getBSDMemoryInfo(o)
 }
 
 // GetDiskInfo returns disk information
 func (o *OpenBSD) GetDiskInfo() []models.DiskInfo {
+	if !o.IsLive() {
+		return []models.DiskInfo{}
+	}
 	return getBSDDiskInfo(o)
 }
 
 // GetListeningPorts returns listening ports
 func (o *OpenBSD) GetListeningPorts(seen map[int]bool) []int {
+	if !o.IsLive() {
+		return []int{}
+	}
 	return getUnixListeningPorts(o, seen)
 }
 
-// GetProcesses returns running processes
 func (o *OpenBSD) GetProcesses() []models.ProcessInfo {
+	if !o.IsLive() {
+		return []models.ProcessInfo{}
+	}
 	return getBSDProcesses(o)
 }
 
-// GetServices returns system services
 func (o *OpenBSD) GetServices() []models.ServiceInfo {
 	var services []models.ServiceInfo
+	if !o.IsLive() {
+		return collectBSDServiceConfig(o)
+	}
 	cmd := o.ExecCommand("rcctl", "ls", "started")
 	output, err := cmd.Output()
 	if err != nil {
@@ -422,6 +476,12 @@ func (f *FreeBSD) CollectSSHKeys(_ *[]string) []models.SSHKeyInfo {
 // CollectInstalledSoftware collects installed software information
 func (f *FreeBSD) CollectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 	software := make([]models.SoftwareInfo, 0)
+	if pkgs := collectBSDPackages(f); len(pkgs) > 0 {
+		return pkgs
+	}
+	if !f.IsLive() {
+		return software
+	}
 
 	// pkg info
 	if output, err := f.ExecCommand("pkg", "info").Output(); err == nil {
@@ -435,10 +495,6 @@ func (f *FreeBSD) CollectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 				})
 			}
 		}
-	}
-
-	if len(software) > 500 {
-		software = software[:500]
 	}
 
 	return software
@@ -457,6 +513,9 @@ func (f *FreeBSD) CollectRecentDownloads(_ *[]string) []models.RecentFileEntry {
 // CollectUSBHistory collects USB device connection history
 func (f *FreeBSD) CollectUSBHistory(_ *[]string) []models.USBDevice {
 	devices := make([]models.USBDevice, 0)
+	if !f.IsLive() {
+		return devices
+	}
 
 	if output, err := f.ExecCommand("usbconfig", "list").Output(); err == nil {
 		scanner := bufio.NewScanner(bytes.NewReader(output))
@@ -484,6 +543,9 @@ func (f *FreeBSD) CollectRecycleBin(_ *[]string) []models.DeletedFile {
 
 // CollectClipboard collects current clipboard content
 func (f *FreeBSD) CollectClipboard(errors *[]string) string {
+	if !f.IsLive() {
+		return ""
+	}
 	cmd := f.ExecCommand("xclip", "-selection", "clipboard", "-o")
 	if _, err := f.ExecCommand("which", "xclip").Output(); err != nil {
 		cmd = f.ExecCommand("xsel", "--clipboard", "--output")
@@ -562,6 +624,12 @@ func (o *OpenBSD) CollectSSHKeys(_ *[]string) []models.SSHKeyInfo {
 // CollectInstalledSoftware collects installed software information
 func (o *OpenBSD) CollectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 	software := make([]models.SoftwareInfo, 0)
+	if pkgs := collectBSDPackages(o); len(pkgs) > 0 {
+		return pkgs
+	}
+	if !o.IsLive() {
+		return software
+	}
 
 	// pkg_info
 	if output, err := o.ExecCommand("pkg_info").Output(); err == nil {
@@ -582,10 +650,6 @@ func (o *OpenBSD) CollectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 		}
 	}
 
-	if len(software) > 500 {
-		software = software[:500]
-	}
-
 	return software
 }
 
@@ -602,6 +666,9 @@ func (o *OpenBSD) CollectRecentDownloads(_ *[]string) []models.RecentFileEntry {
 // CollectUSBHistory collects USB device connection history
 func (o *OpenBSD) CollectUSBHistory(_ *[]string) []models.USBDevice {
 	devices := make([]models.USBDevice, 0)
+	if !o.IsLive() {
+		return devices
+	}
 
 	if output, err := o.ExecCommand("dmesg").Output(); err == nil {
 		scanner := bufio.NewScanner(bytes.NewReader(output))
@@ -631,6 +698,9 @@ func (o *OpenBSD) CollectRecycleBin(_ *[]string) []models.DeletedFile {
 
 // CollectClipboard collects current clipboard content
 func (o *OpenBSD) CollectClipboard(errors *[]string) string {
+	if !o.IsLive() {
+		return ""
+	}
 	cmd := o.ExecCommand("xclip", "-selection", "clipboard", "-o")
 	if _, err := o.ExecCommand("which", "xclip").Output(); err != nil {
 		cmd = o.ExecCommand("xsel", "--clipboard", "--output")
@@ -660,32 +730,158 @@ type bsdCollector interface {
 	ReadFileWithLimit(path string, maxSize int64) (string, bool, error)
 }
 
-//nolint:dupl // Similar implementation for BSD, slight differences in paths
-func collectBrowserDBFilesUnix(collector bsdCollector, errors *[]string) []models.ForensicFile {
-	files := make([]models.ForensicFile, 0)
-	homeDir, _ := collector.OSUserHomeDir()
+func collectBSDPackages(collector SystemPrimitives) []models.SoftwareInfo {
+	packages := make([]models.SoftwareInfo, 0)
+	base := "/var/db/pkg"
+	entries, err := collector.OSReadDir(base)
+	if err != nil {
+		return packages
+	}
 
-	// Chrome
-	chromeBase := filepath.Join(homeDir, ".config", "chromium", "Default")
-	for _, name := range []string{"History", "Cookies"} {
-		src := filepath.Join(chromeBase, name)
-		if artifact, err := collector.CopyFileArtifact(src, "chrome_"+strings.ToLower(name), "chrome"); err == nil {
-			files = append(files, *artifact)
-		} else if errors != nil {
-			*errors = append(*errors, err.Error())
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		pkgName := name
+		version := ""
+		if idx := strings.LastIndex(name, "-"); idx > 0 {
+			pkgName = name[:idx]
+			version = name[idx+1:]
+		}
+		packages = append(packages, models.SoftwareInfo{
+			Name:    pkgName,
+			Version: version,
+			Source:  "pkg_db",
+		})
+		if len(packages) >= 500 {
+			break
 		}
 	}
 
-	// Firefox
-	firefoxProfiles := filepath.Join(homeDir, ".mozilla", "firefox")
-	if profiles, err := filepath.Glob(filepath.Join(firefoxProfiles, "*.default*")); err == nil {
-		for _, profile := range profiles {
-			for _, name := range []string{"places.sqlite", "cookies.sqlite"} {
-				src := filepath.Join(profile, name)
-				if artifact, err := collector.CopyFileArtifact(src, "firefox_"+strings.TrimSuffix(name, ".sqlite"), "firefox"); err == nil {
-					files = append(files, *artifact)
-				} else if errors != nil {
-					*errors = append(*errors, err.Error())
+	return packages
+}
+
+func collectBSDServiceConfig(collector SystemPrimitives) []models.ServiceInfo {
+	services := make([]models.ServiceInfo, 0)
+	enabled := make(map[string]string)
+
+	parseRcConf := func(path string) {
+		data, err := collector.OSReadFile(path)
+		if err != nil {
+			return
+		}
+		scanner := bufio.NewScanner(bytes.NewReader(data))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimSpace(parts[0])
+			val := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+			if strings.HasSuffix(key, "_enable") {
+				name := strings.TrimSuffix(key, "_enable")
+				enabled[name] = val
+			}
+		}
+	}
+
+	parseRcConf("/etc/rc.conf")
+	parseRcConf("/etc/rc.conf.local")
+
+	serviceDirs := []string{"/etc/rc.d", "/usr/local/etc/rc.d"}
+	seen := make(map[string]bool)
+	for _, dir := range serviceDirs {
+		entries, err := collector.OSReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			status := "configured"
+			if val, ok := enabled[name]; ok {
+				if strings.EqualFold(val, "YES") {
+					status = "enabled"
+				} else if strings.EqualFold(val, "NO") {
+					status = "disabled"
+				}
+			}
+			services = append(services, models.ServiceInfo{
+				Name:        name,
+				Status:      status,
+				Description: fmt.Sprintf("rc.conf: %s", enabled[name]),
+			})
+			if len(services) >= 200 {
+				return services
+			}
+		}
+	}
+
+	for name, val := range enabled {
+		if seen[name] {
+			continue
+		}
+		status := "configured"
+		if strings.EqualFold(val, "YES") {
+			status = "enabled"
+		} else if strings.EqualFold(val, "NO") {
+			status = "disabled"
+		}
+		services = append(services, models.ServiceInfo{
+			Name:        name,
+			Status:      status,
+			Description: fmt.Sprintf("rc.conf: %s", val),
+		})
+		if len(services) >= 200 {
+			break
+		}
+	}
+
+	return services
+}
+
+//nolint:dupl // Similar implementation for BSD, slight differences in paths
+func collectBrowserDBFilesUnix(collector bsdCollector, errors *[]string) []models.ForensicFile {
+	files := make([]models.ForensicFile, 0)
+	homeDirs, err := collector.OSUserHomeDirs()
+	if err != nil {
+		return files
+	}
+
+	for _, homeDir := range homeDirs {
+		// Chrome
+		chromeBase := filepath.Join(homeDir, ".config", "chromium", "Default")
+		for _, name := range []string{"History", "Cookies"} {
+			src := filepath.Join(chromeBase, name)
+			if artifact, err := collector.CopyFileArtifact(src, "chrome_"+strings.ToLower(name), "chrome"); err == nil {
+				files = append(files, *artifact)
+			} else if errors != nil {
+				*errors = append(*errors, err.Error())
+			}
+		}
+
+		// Firefox
+		firefoxProfiles := filepath.Join(homeDir, ".mozilla", "firefox")
+		if profiles, err := filepath.Glob(filepath.Join(firefoxProfiles, "*.default*")); err == nil {
+			for _, profile := range profiles {
+				for _, name := range []string{"places.sqlite", "cookies.sqlite"} {
+					src := filepath.Join(profile, name)
+					if artifact, err := collector.CopyFileArtifact(src, "firefox_"+strings.TrimSuffix(name, ".sqlite"), "firefox"); err == nil {
+						files = append(files, *artifact)
+					} else if errors != nil {
+						*errors = append(*errors, err.Error())
+					}
 				}
 			}
 		}
@@ -696,31 +892,34 @@ func collectBrowserDBFilesUnix(collector bsdCollector, errors *[]string) []model
 
 func collectCommandHistoryUnix(collector SystemPrimitives) []models.CommandEntry {
 	commands := make([]models.CommandEntry, 0)
-	homeDir, err := collector.OSUserHomeDir()
+	homeDirs, err := collector.OSUserHomeDirs()
 	if err != nil {
 		return commands
 	}
 
-	historyFiles := []struct {
-		path  string
-		shell string
-	}{
-		{filepath.Join(homeDir, ".bash_history"), "bash"},
-		{filepath.Join(homeDir, ".zsh_history"), "zsh"},
-		{filepath.Join(homeDir, ".sh_history"), "sh"},
-	}
+	for _, homeDir := range homeDirs {
+		historyFiles := []struct {
+			path  string
+			shell string
+		}{
+			{filepath.Join(homeDir, ".bash_history"), "bash"},
+			{filepath.Join(homeDir, ".zsh_history"), "zsh"},
+			{filepath.Join(homeDir, ".sh_history"), "sh"},
+			{filepath.Join(homeDir, ".history"), "csh"},
+		}
 
-	for _, hf := range historyFiles {
-		//nolint:gosec // G304: path constructed from trusted UserHomeDir
-		if content, err := collector.OSReadFile(hf.path); err == nil {
-			for i, line := range strings.Split(string(content), "\n") {
-				line = strings.TrimSpace(line)
-				if line != "" && !strings.HasPrefix(line, "#") {
-					commands = append(commands, models.CommandEntry{
-						Shell:   hf.shell,
-						Command: line,
-						LineNum: i + 1,
-					})
+		for _, hf := range historyFiles {
+			//nolint:gosec // G304: path constructed from trusted UserHomeDir
+			if content, err := collector.OSReadFile(hf.path); err == nil {
+				for i, line := range strings.Split(string(content), "\n") {
+					line = strings.TrimSpace(line)
+					if line != "" && !strings.HasPrefix(line, "#") {
+						commands = append(commands, models.CommandEntry{
+							Shell:   hf.shell,
+							Command: line,
+							LineNum: i + 1,
+						})
+					}
 				}
 			}
 		}
@@ -762,24 +961,47 @@ func collectSystemLogsUnix(collector bsdCollector, errors *[]string, logPaths []
 func collectScheduledTasksUnix(collector SystemPrimitives) []models.ScheduledTask {
 	tasks := make([]models.ScheduledTask, 0)
 
-	// User crontab
-	if output, err := collector.ExecCommand("crontab", "-l").Output(); err == nil {
-		scanner := bufio.NewScanner(bytes.NewReader(output))
+	parseCron := func(content []byte, user string) {
+		scanner := bufio.NewScanner(bytes.NewReader(content))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
-
 			if parts := strings.Fields(line); len(parts) >= 6 {
 				tasks = append(tasks, models.ScheduledTask{
 					Name:     strings.Join(parts[5:], " "),
 					Command:  strings.Join(parts[5:], " "),
 					Schedule: strings.Join(parts[0:5], " "),
+					User:     user,
 					Enabled:  true,
 					Source:   "crontab",
 				})
 			}
+		}
+	}
+
+	if data, err := collector.OSReadFile("/etc/crontab"); err == nil {
+		parseCron(data, "root")
+	}
+
+	for _, dir := range []string{"/var/cron/tabs", "/var/cron"} {
+		if entries, err := collector.OSReadDir(dir); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				path := filepath.Join(dir, entry.Name())
+				if data, err := collector.OSReadFile(path); err == nil {
+					parseCron(data, entry.Name())
+				}
+			}
+		}
+	}
+
+	if live, ok := collector.(interface{ IsLive() bool }); ok && live.IsLive() {
+		if output, err := collector.ExecCommand("crontab", "-l").Output(); err == nil {
+			parseCron(output, "user")
 		}
 	}
 

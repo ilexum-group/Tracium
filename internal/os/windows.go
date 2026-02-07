@@ -6,11 +6,13 @@ package os
 import (
 	"bufio"
 	"bytes"
+	"encoding/xml"
 	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/ilexum-group/tracium/pkg/models"
 )
@@ -22,13 +24,21 @@ type Windows struct {
 
 // NewWindows creates a new Windows instance
 func NewWindows() Collector {
+	return NewWindowsWithDefault(NewDefault())
+}
+
+// NewWindowsWithDefault creates a new Windows instance with a provided Default.
+func NewWindowsWithDefault(def *Default) Collector {
 	return &Windows{
-		Default: NewDefault(),
+		Default: def,
 	}
 }
 
 // GetCurrentUser returns the current user name
 func (w *Windows) GetCurrentUser() (string, error) {
+	if !w.IsLive() {
+		return "unknown", nil
+	}
 	currentUser, err := w.UserCurrent()
 	// On Windows, username may include domain (DOMAIN\username)
 	// Extract just the username part
@@ -43,6 +53,9 @@ func (w *Windows) GetCurrentUser() (string, error) {
 
 // GetUptime returns the system uptime in seconds
 func (w *Windows) GetUptime() int64 {
+	if !w.IsLive() {
+		return 0
+	}
 	cmd := w.ExecCommand("powershell", "-Command", "(Get-CimInstance Win32_OperatingSystem).LastBootUpTime")
 	output, err := cmd.Output()
 	if err != nil {
@@ -61,22 +74,44 @@ func (w *Windows) GetUptime() int64 {
 // GetUsers returns the list of system users
 func (w *Windows) GetUsers() []string {
 	var users []string
+	fmt.Printf("[windows] GetUsers: live=%v\n", w.IsLive())
 
-	cmd := w.ExecCommand("powershell", "-Command", "Get-LocalUser | Select-Object -ExpandProperty Name")
-	output, err := cmd.Output()
-	if err == nil {
-		scanner := bufio.NewScanner(bytes.NewReader(output))
-		for scanner.Scan() {
-			username := strings.TrimSpace(scanner.Text())
-			if username != "" {
-				users = append(users, username)
+	base := w.OSGetenv("SystemDrive")
+	if base == "" {
+		base = "C:"
+	}
+	usersDir := filepath.Join(base, "Users")
+	fmt.Printf("[windows] GetUsers: scanning usersDir=%s\n", usersDir)
+	if entries, err := w.OSReadDir(usersDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
 			}
+			name := entry.Name()
+			if name == "Default" || name == "Default User" || name == "All Users" || name == "Public" {
+				continue
+			}
+			users = append(users, name)
 		}
+		fmt.Printf("[windows] GetUsers: dir scan found %d users\n", len(users))
+	} else {
+		fmt.Printf("[windows] GetUsers: read dir failed: %s err=%v\n", usersDir, err)
 	}
 
 	if len(users) == 0 {
-		if currentUser, err := w.UserCurrent(); err == nil {
-			users = append(users, currentUser.Username)
+		if w.IsLive() {
+			if currentUser, err := w.UserCurrent(); err == nil {
+				users = append(users, currentUser.Username)
+				fmt.Printf("[windows] GetUsers: live fallback user=%s\n", currentUser.Username)
+			} else {
+				fmt.Printf("[windows] GetUsers: live fallback failed err=%v\n", err)
+			}
+		}
+		if !w.IsLive() {
+			fmt.Printf("[windows] GetUsers: fallback to registry\n")
+			registryUsers := w.collectUsersFromRegistry()
+			fmt.Printf("[windows] GetUsers: registry users=%d\n", len(registryUsers))
+			users = append(users, registryUsers...)
 		}
 	}
 
@@ -88,6 +123,9 @@ func (w *Windows) GetCPUInfo() models.CPUInfo {
 	cpuInfo := models.CPUInfo{
 		Cores: 0,
 		Model: "Unknown",
+	}
+	if !w.IsLive() {
+		return cpuInfo
 	}
 
 	cmd := w.ExecCommand("powershell", "-Command", "(Get-CimInstance Win32_Processor).Name")
@@ -109,6 +147,9 @@ func (w *Windows) GetCPUInfo() models.CPUInfo {
 // GetMemoryInfo returns memory information
 func (w *Windows) GetMemoryInfo() models.MemoryInfo {
 	memInfo := models.MemoryInfo{}
+	if !w.IsLive() {
+		return memInfo
+	}
 
 	// Get total memory
 	cmd := w.ExecCommand("powershell", "-Command", "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory")
@@ -132,6 +173,9 @@ func (w *Windows) GetMemoryInfo() models.MemoryInfo {
 // GetDiskInfo returns disk information
 func (w *Windows) GetDiskInfo() []models.DiskInfo {
 	var disks []models.DiskInfo
+	if !w.IsLive() {
+		return disks
+	}
 
 	cmd := w.ExecCommand("powershell", "-Command", "Get-PSDrive -PSProvider FileSystem | Where-Object {$_.Used -ne $null} | Select-Object Name,@{Name='Total';Expression={$_.Used+$_.Free}},Used | ConvertTo-Json")
 	output, err := cmd.Output()
@@ -214,6 +258,9 @@ func (w *Windows) GetDiskInfo() []models.DiskInfo {
 //nolint:dupl // Similar netstat parsing, Windows-specific output format differs
 func (w *Windows) GetListeningPorts(seen map[int]bool) []int {
 	var ports []int
+	if !w.IsLive() {
+		return ports
+	}
 	cmd := w.ExecCommand("netstat", "-an")
 	output, err := cmd.Output()
 	if err != nil {
@@ -246,6 +293,9 @@ func (w *Windows) GetListeningPorts(seen map[int]bool) []int {
 // GetProcesses returns running processes
 func (w *Windows) GetProcesses() []models.ProcessInfo {
 	var processes []models.ProcessInfo
+	if !w.IsLive() {
+		return processes
+	}
 
 	cmd := w.ExecCommand("powershell", "-Command",
 		"Get-Process | Select-Object -First 100 Id,Name,@{Name='User';Expression={(Get-CimInstance Win32_Process -Filter \"ProcessId=$($_.Id)\").GetOwner().User}},CPU,@{Name='Memory';Expression={$_.WorkingSet64}} | ConvertTo-Csv -NoTypeInformation")
@@ -312,6 +362,12 @@ func (w *Windows) GetProcesses() []models.ProcessInfo {
 // GetServices returns system services
 func (w *Windows) GetServices() []models.ServiceInfo {
 	var services []models.ServiceInfo
+	if !w.IsLive() {
+		fmt.Printf("[windows] GetServices: using registry (post-mortem)\n")
+		registryServices := w.collectServicesFromRegistry()
+		fmt.Printf("[windows] GetServices: registry services=%d\n", len(registryServices))
+		return registryServices
+	}
 
 	cmd := w.ExecCommand("powershell", "-Command",
 		"Get-Service | Select-Object -First 50 Name,Status,DisplayName | ConvertTo-Csv -NoTypeInformation")
@@ -342,8 +398,10 @@ func (w *Windows) GetServices() []models.ServiceInfo {
 				})
 			}
 		}
+		fmt.Printf("[windows] GetServices: powershell services=%d\n", len(services))
 		return services
 	}
+	fmt.Printf("[windows] GetServices: powershell failed err=%v\n", err)
 
 	// Fallback to sc query
 	cmd = w.ExecCommand("sc", "query")
@@ -385,6 +443,7 @@ func (w *Windows) GetServices() []models.ServiceInfo {
 		services = append(services, currentService)
 	}
 
+	fmt.Printf("[windows] GetServices: sc query services=%d\n", len(services))
 	return services
 }
 
@@ -393,40 +452,45 @@ func (w *Windows) GetServices() []models.ServiceInfo {
 // CollectBrowserDBFiles collects browser database files
 func (w *Windows) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile {
 	files := make([]models.ForensicFile, 0)
-	homeDir, _ := w.OSUserHomeDir()
-
-	// Chrome
-	chromeBase := filepath.Join(homeDir, "AppData", "Local", "Google", "Chrome", "User Data", "Default")
-	for _, name := range []string{"History", "Cookies"} {
-		src := filepath.Join(chromeBase, name)
-		if artifact, err := w.CopyFileArtifact(src, "chrome_"+strings.ToLower(name), "chrome"); err == nil {
-			files = append(files, *artifact)
-		} else if errors != nil {
-			*errors = append(*errors, err.Error())
-		}
+	homeDirs, err := w.OSUserHomeDirs()
+	if err != nil {
+		return files
 	}
 
-	// Edge
-	edgeBase := filepath.Join(homeDir, "AppData", "Local", "Microsoft", "Edge", "User Data", "Default")
-	for _, name := range []string{"History", "Cookies"} {
-		src := filepath.Join(edgeBase, name)
-		if artifact, err := w.CopyFileArtifact(src, "edge_"+strings.ToLower(name), "edge"); err == nil {
-			files = append(files, *artifact)
-		} else if errors != nil {
-			*errors = append(*errors, err.Error())
+	for _, homeDir := range homeDirs {
+		// Chrome
+		chromeBase := filepath.Join(homeDir, "AppData", "Local", "Google", "Chrome", "User Data", "Default")
+		for _, name := range []string{"History", "Cookies"} {
+			src := filepath.Join(chromeBase, name)
+			if artifact, err := w.CopyFileArtifact(src, "chrome_"+strings.ToLower(name), "chrome"); err == nil {
+				files = append(files, *artifact)
+			} else if errors != nil {
+				*errors = append(*errors, err.Error())
+			}
 		}
-	}
 
-	// Firefox
-	firefoxProfiles := filepath.Join(homeDir, "AppData", "Roaming", "Mozilla", "Firefox", "Profiles")
-	if profiles, err := filepath.Glob(filepath.Join(firefoxProfiles, "*.default*")); err == nil {
-		for _, profile := range profiles {
-			for _, name := range []string{"places.sqlite", "cookies.sqlite"} {
-				src := filepath.Join(profile, name)
-				if artifact, err := w.CopyFileArtifact(src, "firefox_"+strings.TrimSuffix(name, ".sqlite"), "firefox"); err == nil {
-					files = append(files, *artifact)
-				} else if errors != nil {
-					*errors = append(*errors, err.Error())
+		// Edge
+		edgeBase := filepath.Join(homeDir, "AppData", "Local", "Microsoft", "Edge", "User Data", "Default")
+		for _, name := range []string{"History", "Cookies"} {
+			src := filepath.Join(edgeBase, name)
+			if artifact, err := w.CopyFileArtifact(src, "edge_"+strings.ToLower(name), "edge"); err == nil {
+				files = append(files, *artifact)
+			} else if errors != nil {
+				*errors = append(*errors, err.Error())
+			}
+		}
+
+		// Firefox
+		firefoxProfiles := filepath.Join(homeDir, "AppData", "Roaming", "Mozilla", "Firefox", "Profiles")
+		if profiles, err := filepath.Glob(filepath.Join(firefoxProfiles, "*.default*")); err == nil {
+			for _, profile := range profiles {
+				for _, name := range []string{"places.sqlite", "cookies.sqlite"} {
+					src := filepath.Join(profile, name)
+					if artifact, err := w.CopyFileArtifact(src, "firefox_"+strings.TrimSuffix(name, ".sqlite"), "firefox"); err == nil {
+						files = append(files, *artifact)
+					} else if errors != nil {
+						*errors = append(*errors, err.Error())
+					}
 				}
 			}
 		}
@@ -438,22 +502,24 @@ func (w *Windows) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile 
 // CollectRecentFiles collects recently accessed files
 func (w *Windows) CollectRecentFiles(_ *[]string) []models.RecentFileEntry {
 	files := make([]models.RecentFileEntry, 0)
-	homeDir, err := w.OSUserHomeDir()
+	homeDirs, err := w.OSUserHomeDirs()
 	if err != nil {
 		return files
 	}
 
-	recentPath := filepath.Join(homeDir, "AppData", "Roaming", "Microsoft", "Windows", "Recent")
-	if entries, err := w.OSReadDir(recentPath); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() && filepath.Ext(entry.Name()) == ".lnk" {
-				if info, err := entry.Info(); err == nil {
-					files = append(files, models.RecentFileEntry{
-						FilePath:     filepath.Join(recentPath, entry.Name()),
-						FileName:     entry.Name(),
-						AccessedTime: info.ModTime().Unix(),
-						Source:       "recent_folder",
-					})
+	for _, homeDir := range homeDirs {
+		recentPath := filepath.Join(homeDir, "AppData", "Roaming", "Microsoft", "Windows", "Recent")
+		if entries, err := w.OSReadDir(recentPath); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() && filepath.Ext(entry.Name()) == ".lnk" {
+					if info, err := entry.Info(); err == nil {
+						files = append(files, models.RecentFileEntry{
+							FilePath:     filepath.Join(recentPath, entry.Name()),
+							FileName:     entry.Name(),
+							AccessedTime: info.ModTime().Unix(),
+							Source:       "recent_folder",
+						})
+					}
 				}
 			}
 		}
@@ -465,44 +531,48 @@ func (w *Windows) CollectRecentFiles(_ *[]string) []models.RecentFileEntry {
 // CollectCommandHistory collects PowerShell command history
 func (w *Windows) CollectCommandHistory(_ *[]string) []models.CommandEntry {
 	commands := make([]models.CommandEntry, 0)
-	homeDir, err := w.OSUserHomeDir()
+	homeDirs, err := w.OSUserHomeDirs()
 	if err != nil {
 		return commands
 	}
 
-	// PowerShell history
-	historyPaths := []string{
-		filepath.Join(homeDir, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"),
-		filepath.Join(homeDir, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "Visual Studio Code Host_history.txt"),
-	}
+	for _, homeDir := range homeDirs {
+		// PowerShell history
+		historyPaths := []string{
+			filepath.Join(homeDir, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"),
+			filepath.Join(homeDir, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "Visual Studio Code Host_history.txt"),
+		}
 
-	for _, historyPath := range historyPaths {
-		//nolint:gosec // G304: path constructed from trusted UserHomeDir
-		if content, err := w.OSReadFile(historyPath); err == nil {
-			for i, line := range strings.Split(string(content), "\n") {
-				line = strings.TrimSpace(line)
-				if line != "" {
-					commands = append(commands, models.CommandEntry{
-						Shell:   "powershell",
-						Command: line,
-						LineNum: i + 1,
-					})
+		for _, historyPath := range historyPaths {
+			//nolint:gosec // G304: path constructed from trusted UserHomeDir
+			if content, err := w.OSReadFile(historyPath); err == nil {
+				for i, line := range strings.Split(string(content), "\n") {
+					line = strings.TrimSpace(line)
+					if line != "" {
+						commands = append(commands, models.CommandEntry{
+							Shell:   "powershell",
+							Command: line,
+							LineNum: i + 1,
+						})
+					}
 				}
 			}
 		}
 	}
 
-	// CMD history (from registry)
-	cmd := w.ExecCommand("powershell", "-Command", "Get-Content -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU' -ErrorAction SilentlyContinue")
-	if output, err := cmd.Output(); err == nil {
-		for i, line := range strings.Split(string(output), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				commands = append(commands, models.CommandEntry{
-					Shell:   "cmd",
-					Command: line,
-					LineNum: i + 1,
-				})
+	// CMD history (from registry) - live only
+	if w.IsLive() {
+		cmd := w.ExecCommand("powershell", "-Command", "Get-Content -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU' -ErrorAction SilentlyContinue")
+		if output, err := cmd.Output(); err == nil {
+			for i, line := range strings.Split(string(output), "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					commands = append(commands, models.CommandEntry{
+						Shell:   "cmd",
+						Command: line,
+						LineNum: i + 1,
+					})
+				}
 			}
 		}
 	}
@@ -515,6 +585,9 @@ func (w *Windows) CollectNetworkHistory(_ *[]string) models.NetworkHistoryData {
 	networkHistory := models.NetworkHistoryData{
 		ARPCache: make([]models.ARPEntry, 0),
 		DNSCache: make([]models.DNSEntry, 0),
+	}
+	if !w.IsLive() {
+		return networkHistory
 	}
 
 	// ARP cache
@@ -555,6 +628,9 @@ func (w *Windows) CollectNetworkHistory(_ *[]string) models.NetworkHistoryData {
 // CollectSystemLogs collects Windows Event Logs
 func (w *Windows) CollectSystemLogs(errors *[]string) []models.LogFile {
 	logs := make([]models.LogFile, 0)
+	if !w.IsLive() {
+		return logs
+	}
 
 	logNames := []string{"System", "Application", "Security"}
 	for _, logName := range logNames {
@@ -591,10 +667,20 @@ func (w *Windows) CollectSystemLogs(errors *[]string) []models.LogFile {
 // CollectScheduledTasks collects scheduled tasks
 func (w *Windows) CollectScheduledTasks(_ *[]string) []models.ScheduledTask {
 	tasks := make([]models.ScheduledTask, 0)
+	fmt.Printf("[windows] CollectScheduledTasks: live=%v\n", w.IsLive())
+	fileTasks := w.collectScheduledTasksFromFiles()
+	if len(fileTasks) > 0 {
+		fmt.Printf("[windows] CollectScheduledTasks: parsed %d task XML files\n", len(fileTasks))
+		return fileTasks
+	}
+	if !w.IsLive() {
+		return tasks
+	}
 
 	cmd := w.ExecCommand("schtasks", "/query", "/fo", "LIST", "/v")
 	output, err := cmd.Output()
 	if err != nil {
+		fmt.Printf("[windows] CollectScheduledTasks: schtasks failed err=%v\n", err)
 		return tasks
 	}
 
@@ -630,7 +716,140 @@ func (w *Windows) CollectScheduledTasks(_ *[]string) []models.ScheduledTask {
 	}
 
 	currentTask.Source = "scheduled_tasks"
+	fmt.Printf("[windows] CollectScheduledTasks: schtasks parsed %d tasks\n", len(tasks))
 	return tasks
+}
+
+type windowsTaskXML struct {
+	RegistrationInfo struct {
+		URI string `xml:"URI"`
+	} `xml:"RegistrationInfo"`
+	Actions struct {
+		Exec struct {
+			Command   string `xml:"Command"`
+			Arguments string `xml:"Arguments"`
+		} `xml:"Exec"`
+	} `xml:"Actions"`
+}
+
+func (w *Windows) collectScheduledTasksFromFiles() []models.ScheduledTask {
+	basePath := "C:\\Windows\\System32\\Tasks"
+	maxTasks := 200
+	collected := make([]models.ScheduledTask, 0)
+	fmt.Printf("[windows] collectScheduledTasksFromFiles: base=%s\n", basePath)
+
+	var walk func(path string)
+	walk = func(path string) {
+		if len(collected) >= maxTasks {
+			return
+		}
+		entries, err := w.OSReadDir(path)
+		if err != nil {
+			fmt.Printf("[windows] collectScheduledTasksFromFiles: read dir failed: %s err=%v\n", path, err)
+			return
+		}
+		for _, entry := range entries {
+			if len(collected) >= maxTasks {
+				return
+			}
+			childPath := filepath.Join(path, entry.Name())
+			if entry.IsDir() {
+				walk(childPath)
+				continue
+			}
+			data, err := w.OSReadFile(childPath)
+			if err != nil || len(data) == 0 {
+				if err != nil {
+					fmt.Printf("[windows] collectScheduledTasksFromFiles: read failed: %s err=%v\n", childPath, err)
+				}
+				continue
+			}
+			data = normalizeTaskXML(data)
+			var task windowsTaskXML
+			if err := xml.Unmarshal(data, &task); err != nil {
+				fmt.Printf("[windows] collectScheduledTasksFromFiles: xml parse failed: %s err=%v\n", childPath, err)
+				continue
+			}
+			name := task.RegistrationInfo.URI
+			if name == "" {
+				name = childPath
+			}
+			command := strings.TrimSpace(task.Actions.Exec.Command)
+			if command == "" {
+				continue
+			}
+			args := strings.TrimSpace(task.Actions.Exec.Arguments)
+			if args != "" {
+				command = fmt.Sprintf("%s %s", command, args)
+			}
+			collected = append(collected, models.ScheduledTask{
+				Name:    name,
+				Command: command,
+				Source:  "task_xml",
+				Enabled: true,
+			})
+		}
+	}
+
+	walk(basePath)
+	fmt.Printf("[windows] collectScheduledTasksFromFiles: collected=%d\n", len(collected))
+	return collected
+}
+
+func normalizeTaskXML(data []byte) []byte {
+	if len(data) < 2 {
+		return data
+	}
+	// UTF-16 BOM detection
+	if data[0] == 0xFF && data[1] == 0xFE {
+		return utf16ToUTF8(data[2:], true)
+	}
+	if data[0] == 0xFE && data[1] == 0xFF {
+		return utf16ToUTF8(data[2:], false)
+	}
+	// Heuristic: contains null bytes => likely UTF-16
+	if bytes.IndexByte(data[:minInt(len(data), 512)], 0x00) != -1 {
+		return utf16ToUTF8(data, likelyUTF16LE(data))
+	}
+	return data
+}
+
+func utf16ToUTF8(data []byte, littleEndian bool) []byte {
+	if len(data)%2 != 0 {
+		data = data[:len(data)-1]
+	}
+	u16 := make([]uint16, 0, len(data)/2)
+	for i := 0; i+1 < len(data); i += 2 {
+		if littleEndian {
+			u16 = append(u16, uint16(data[i])|uint16(data[i+1])<<8)
+		} else {
+			u16 = append(u16, uint16(data[i])<<8|uint16(data[i+1]))
+		}
+	}
+	return []byte(string(utf16.Decode(u16)))
+}
+
+func likelyUTF16LE(data []byte) bool {
+	// If even bytes are ASCII and odd bytes are 0x00, assume LE.
+	limit := minInt(len(data), 256)
+	zeroOdd := 0
+	zeroEven := 0
+	for i := 0; i+1 < limit; i += 2 {
+		if data[i] == 0x00 {
+			zeroEven++
+		}
+		if data[i+1] == 0x00 {
+			zeroOdd++
+		}
+	}
+	return zeroOdd >= zeroEven
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // CollectActiveConnections collects active network connections
@@ -651,6 +870,16 @@ func (w *Windows) CollectSSHKeys(_ *[]string) []models.SSHKeyInfo {
 // CollectInstalledSoftware collects installed software information
 func (w *Windows) CollectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 	software := make([]models.SoftwareInfo, 0)
+	if !w.IsLive() {
+		fmt.Printf("[windows] CollectInstalledSoftware: using registry (post-mortem)\n")
+		registrySoftware := w.collectInstalledSoftwareFromRegistry()
+		fmt.Printf("[windows] CollectInstalledSoftware: registry count=%d\n", len(registrySoftware))
+		return registrySoftware
+	}
+	if registrySoftware := w.collectInstalledSoftwareFromRegistry(); len(registrySoftware) > 0 {
+		fmt.Printf("[windows] CollectInstalledSoftware: using registry (live) count=%d\n", len(registrySoftware))
+		return registrySoftware
+	}
 
 	cmd := w.ExecCommand("powershell", "-Command",
 		"Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Select-Object DisplayName,DisplayVersion,Publisher")
@@ -677,10 +906,10 @@ func (w *Windows) CollectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 			}
 		}
 	}
-
-	if len(software) > 500 {
-		software = software[:500]
+	if err != nil {
+		fmt.Printf("[windows] CollectInstalledSoftware: powershell failed err=%v\n", err)
 	}
+	fmt.Printf("[windows] CollectInstalledSoftware: powershell parsed %d entries\n", len(software))
 
 	return software
 }
@@ -698,6 +927,12 @@ func (w *Windows) CollectRecentDownloads(_ *[]string) []models.RecentFileEntry {
 // CollectUSBHistory collects USB device connection history
 func (w *Windows) CollectUSBHistory(_ *[]string) []models.USBDevice {
 	devices := make([]models.USBDevice, 0)
+	if !w.IsLive() {
+		fmt.Printf("[windows] CollectUSBHistory: using registry (post-mortem)\n")
+		registryDevices := w.collectUSBHistoryFromRegistry()
+		fmt.Printf("[windows] CollectUSBHistory: registry count=%d\n", len(registryDevices))
+		return registryDevices
+	}
 
 	cmd := w.ExecCommand("powershell", "-Command",
 		"Get-PnpDevice -Class USB | Select-Object FriendlyName,InstanceId,Status")
@@ -723,6 +958,10 @@ func (w *Windows) CollectUSBHistory(_ *[]string) []models.USBDevice {
 			}
 		}
 	}
+	if err != nil {
+		fmt.Printf("[windows] CollectUSBHistory: powershell failed err=%v\n", err)
+	}
+	fmt.Printf("[windows] CollectUSBHistory: powershell parsed %d entries\n", len(devices))
 
 	return devices
 }
@@ -756,6 +995,9 @@ func (w *Windows) CollectPrefetchFiles(errors *[]string) []models.PrefetchInfo {
 // CollectRecycleBin collects recycle bin contents
 func (w *Windows) CollectRecycleBin(_ *[]string) []models.DeletedFile {
 	deletedFiles := make([]models.DeletedFile, 0)
+	if !w.IsLive() {
+		return deletedFiles
+	}
 
 	cmd := w.ExecCommand("powershell", "-Command",
 		"(New-Object -ComObject Shell.Application).NameSpace(0xa).Items() | Select-Object Name,Size,Path")
@@ -790,6 +1032,9 @@ func (w *Windows) CollectRecycleBin(_ *[]string) []models.DeletedFile {
 
 // CollectClipboard collects current clipboard content
 func (w *Windows) CollectClipboard(errors *[]string) string {
+	if !w.IsLive() {
+		return ""
+	}
 	cmd := w.ExecCommand("powershell", "-Command", "Get-Clipboard")
 	output, err := cmd.Output()
 	if err != nil {

@@ -56,6 +56,26 @@ func (lc *LoggingCollector) SetLogger(logFunc models.CommandLogger) {
 	lc.collector.SetLogger(logFunc)
 }
 
+// OSName returns the detected OS name
+func (lc *LoggingCollector) OSName() string {
+	var result string
+	_ = lc.logMethodCall("OSName", []string{}, func() error {
+		result = lc.collector.OSName()
+		return nil
+	})
+	return result
+}
+
+// Architecture returns the detected CPU architecture
+func (lc *LoggingCollector) Architecture() string {
+	var result string
+	_ = lc.logMethodCall("Architecture", []string{}, func() error {
+		result = lc.collector.Architecture()
+		return nil
+	})
+	return result
+}
+
 // Hostname returns the system hostname
 func (lc *LoggingCollector) Hostname() (string, error) {
 	var result string
@@ -404,6 +424,27 @@ func (lc *LoggingCollector) OSUserHomeDir() (string, error) {
 		return err
 	})
 	return result, err
+}
+
+// OSUserHomeDirs wraps OSUserHomeDirs with logging
+func (lc *LoggingCollector) OSUserHomeDirs() ([]string, error) {
+	var result []string
+	var err error
+	_ = lc.logMethodCall("os.UserHomeDirs", []string{}, func() error {
+		result, err = lc.collector.OSUserHomeDirs()
+		return err
+	})
+	return result, err
+}
+
+// CollectFilesystemTree wraps CollectFilesystemTree with logging
+func (lc *LoggingCollector) CollectFilesystemTree() models.FilesystemTree {
+	var result models.FilesystemTree
+	_ = lc.logMethodCall("CollectFilesystemTree", []string{}, func() error {
+		result = lc.collector.CollectFilesystemTree()
+		return nil
+	})
+	return result
 }
 
 // OSGetenv wraps os.Getenv with logging

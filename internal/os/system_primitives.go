@@ -20,6 +20,7 @@ type SystemPrimitives interface {
 	OSReadDir(path string) ([]fs.DirEntry, error)
 	OSCreate(path string) (*os.File, error)
 	OSUserHomeDir() (string, error)
+	OSUserHomeDirs() ([]string, error)
 	OSGetenv(key string) string
 
 	// User operations
@@ -37,6 +38,9 @@ type SystemPrimitives interface {
 //
 //nolint:gosec // G304: Paths are controlled by forensic collection logic
 func (d *Default) OSReadFile(path string) ([]byte, error) {
+	if d.fileAccessor != nil {
+		return d.fileAccessor.ReadFile(path)
+	}
 	return os.ReadFile(path)
 }
 
@@ -44,16 +48,25 @@ func (d *Default) OSReadFile(path string) ([]byte, error) {
 //
 //nolint:gosec // G304: Paths are controlled by forensic collection logic
 func (d *Default) OSOpen(path string) (*os.File, error) {
+	if d.fileAccessor != nil {
+		return d.fileAccessor.Open(path)
+	}
 	return os.Open(path)
 }
 
 // OSStat wraps os.Stat
 func (d *Default) OSStat(path string) (fs.FileInfo, error) {
+	if d.fileAccessor != nil {
+		return d.fileAccessor.Stat(path)
+	}
 	return os.Stat(path)
 }
 
 // OSReadDir wraps os.ReadDir
 func (d *Default) OSReadDir(path string) ([]fs.DirEntry, error) {
+	if d.fileAccessor != nil {
+		return d.fileAccessor.ReadDir(path)
+	}
 	return os.ReadDir(path)
 }
 
@@ -66,11 +79,29 @@ func (d *Default) OSCreate(path string) (*os.File, error) {
 
 // OSUserHomeDir wraps os.UserHomeDir
 func (d *Default) OSUserHomeDir() (string, error) {
+	if d.mode == ImageMode {
+		return d.resolveImageUserHomeDir()
+	}
 	return os.UserHomeDir()
+}
+
+// OSUserHomeDirs returns user home directories
+func (d *Default) OSUserHomeDirs() ([]string, error) {
+	if d.mode == ImageMode {
+		return d.resolveImageUserHomeDirs()
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	return []string{home}, nil
 }
 
 // OSGetenv wraps os.Getenv
 func (d *Default) OSGetenv(key string) string {
+	if d.mode == ImageMode {
+		return ""
+	}
 	return os.Getenv(key)
 }
 

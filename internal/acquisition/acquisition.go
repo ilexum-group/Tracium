@@ -2,7 +2,7 @@
 package acquisition
 
 import (
-	"runtime"
+	"fmt"
 
 	"github.com/ilexum-group/tracium/internal/forensics"
 	osinfo "github.com/ilexum-group/tracium/internal/os"
@@ -34,6 +34,13 @@ func (a *Acquisition) Acquire() models.SystemData {
 		Hardware: a.CollectHardwareInfo(),
 		Network:  a.CollectNetworkInfo(),
 		Security: a.CollectSecurityInfo(),
+		Forensics: func() models.ForensicsData {
+			if a.forensics != nil {
+				return a.forensics.Collect()
+			}
+			return models.ForensicsData{CollectionErrors: make([]string, 0)}
+		}(),
+		Tree: a.collector.CollectFilesystemTree(),
 	}
 
 	a.custodyChain.LogInfo("Acquire", "Complete system acquisition process finished successfully")
@@ -43,24 +50,27 @@ func (a *Acquisition) Acquire() models.SystemData {
 // CollectSystemInfo collects basic system information
 func (a *Acquisition) CollectSystemInfo() models.SystemInfo {
 	a.custodyChain.LogInfo("CollectSystemInfo", "Starting system information collection")
+	fmt.Printf("[acquisition] CollectSystemInfo start\n")
 
 	hostname, _ := a.collector.Hostname()
 
 	systemInfo := models.SystemInfo{
-		OS:           runtime.GOOS,
+		OS:           a.collector.OSName(),
 		Hostname:     hostname,
-		Architecture: runtime.GOARCH,
+		Architecture: a.collector.Architecture(),
 		Uptime:       a.collector.GetUptime(),
 		Users:        a.collector.GetUsers(),
 	}
 
 	a.custodyChain.LogInfo("CollectSystemInfo", "System information collection completed successfully")
+	fmt.Printf("[acquisition] CollectSystemInfo done\n")
 	return systemInfo
 }
 
 // CollectHardwareInfo collects hardware information
 func (a *Acquisition) CollectHardwareInfo() models.HardwareInfo {
 	a.custodyChain.LogInfo("CollectHardwareInfo", "Starting hardware information collection")
+	fmt.Printf("[acquisition] CollectHardwareInfo start\n")
 
 	hardwareInfo := models.HardwareInfo{
 		CPU:    a.collector.GetCPUInfo(),
@@ -69,12 +79,14 @@ func (a *Acquisition) CollectHardwareInfo() models.HardwareInfo {
 	}
 
 	a.custodyChain.LogInfo("CollectHardwareInfo", "Hardware information collection completed successfully")
+	fmt.Printf("[acquisition] CollectHardwareInfo done\n")
 	return hardwareInfo
 }
 
 // CollectNetworkInfo collects network information
 func (a *Acquisition) CollectNetworkInfo() models.NetworkInfo {
 	a.custodyChain.LogInfo("CollectNetworkInfo", "Starting network information collection")
+	fmt.Printf("[acquisition] CollectNetworkInfo start\n")
 
 	networkInfo := models.NetworkInfo{
 		Interfaces:     a.collector.GetInterfaces(),
@@ -82,12 +94,14 @@ func (a *Acquisition) CollectNetworkInfo() models.NetworkInfo {
 	}
 
 	a.custodyChain.LogInfo("CollectNetworkInfo", "Network information collection completed successfully")
+	fmt.Printf("[acquisition] CollectNetworkInfo done\n")
 	return networkInfo
 }
 
 // CollectSecurityInfo collects security-related information
 func (a *Acquisition) CollectSecurityInfo() models.SecurityInfo {
 	a.custodyChain.LogInfo("CollectSecurityInfo", "Starting security information collection")
+	fmt.Printf("[acquisition] CollectSecurityInfo start\n")
 
 	securityInfo := models.SecurityInfo{
 		Processes: a.collector.GetProcesses(),
@@ -95,5 +109,6 @@ func (a *Acquisition) CollectSecurityInfo() models.SecurityInfo {
 	}
 
 	a.custodyChain.LogInfo("CollectSecurityInfo", "Security information collection completed successfully")
+	fmt.Printf("[acquisition] CollectSecurityInfo done\n")
 	return securityInfo
 }

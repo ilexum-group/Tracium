@@ -40,7 +40,17 @@ func main() {
 	}
 
 	// Initialize OS wrapper
-	baseCollector := osinfo.New()
+	var baseCollector osinfo.Collector
+	if cfg.ImagePath != "" {
+		var err error
+		baseCollector, err = osinfo.NewWithOptions(osinfo.CollectorOptions{ImagePath: cfg.ImagePath})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to initialize image collector: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		baseCollector = osinfo.New()
+	}
 
 	// Wrap with logging collector to automatically log all method calls with timing
 	osImpl := osinfo.NewLoggingCollector(baseCollector, custodyChain.LogCommand)

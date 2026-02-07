@@ -35,6 +35,8 @@ type Collector interface {
 
 	// OS primitives
 	SetLogger(models.CommandLogger)
+	OSName() string
+	Architecture() string
 	Hostname() (string, error)
 	GetCurrentUser() (string, error)
 	GetProcessID() int
@@ -73,16 +75,65 @@ type Collector interface {
 	CollectPrefetchFiles(errors *[]string) []models.PrefetchInfo
 	CollectRecycleBin(errors *[]string) []models.DeletedFile
 	CollectClipboard(errors *[]string) string
+	CollectFilesystemTree() models.FilesystemTree
 }
 
 // Default provides default implementations for platform-independent methods
 type Default struct {
-	logFunc models.CommandLogger
+	logFunc      models.CommandLogger
+	mode         AnalysisMode
+	fileAccessor FileAccessor
+	osName       string
+	arch         string
 }
 
 // NewDefault creates a new Default instance
 func NewDefault() *Default {
-	return &Default{}
+	return &Default{
+		mode:         LiveMode,
+		fileAccessor: newHostFileAccessor(),
+	}
+}
+
+// NewDefaultWithOptions creates a Default configured for the provided options.
+func NewDefaultWithOptions(opts CollectorOptions) (*Default, error) {
+	if opts.ImagePath == "" {
+		return NewDefault(), nil
+	}
+
+	accessor, err := newImageFileAccessor(opts.ImagePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Default{
+		mode:         ImageMode,
+		fileAccessor: accessor,
+	}, nil
+}
+
+// IsLive returns true when running in live analysis mode.
+func (d *Default) IsLive() bool {
+	return d.mode == LiveMode
+}
+
+// OSName returns the detected OS name.
+func (d *Default) OSName() string {
+	if d.osName != "" {
+		return d.osName
+	}
+	return runtime.GOOS
+}
+
+// Architecture returns the detected CPU architecture.
+func (d *Default) Architecture() string {
+	if d.arch != "" {
+		return d.arch
+	}
+	if d.IsLive() {
+		return runtime.GOARCH
+	}
+	return "unknown"
 }
 
 // SetLogger configures the logging function for OS operations
@@ -92,11 +143,23 @@ func (d *Default) SetLogger(logFunc models.CommandLogger) {
 
 // Hostname returns the system hostname
 func (d *Default) Hostname() (string, error) {
+	if data, err := d.OSReadFile("/etc/hostname"); err == nil {
+		name := strings.TrimSpace(string(data))
+		if name != "" {
+			return name, nil
+		}
+	}
+	if !d.IsLive() {
+		return "", fmt.Errorf("hostname unavailable in post-mortem mode")
+	}
 	return os.Hostname()
 }
 
 // GetProcessID returns the current process ID
 func (d *Default) GetProcessID() int {
+	if !d.IsLive() {
+		return 0
+	}
 	return os.Getpid()
 }
 
@@ -108,6 +171,9 @@ func (d *Default) GetCurrentUser() (string, error) {
 // GetInterfaces returns network interfaces (platform-independent using net package)
 func (d *Default) GetInterfaces() []models.InterfaceInfo {
 	var interfaces []models.InterfaceInfo
+	if !d.IsLive() {
+		return interfaces
+	}
 	ifaces, err := d.NetInterfaces()
 	if err != nil {
 		return interfaces
@@ -260,6 +326,90 @@ func (d *Default) CollectClipboard(_ *[]string) string {
 	return ""
 }
 
+// CollectFilesystemTree builds a filesystem tree using file-based enumeration.
+func (d *Default) CollectFilesystemTree() models.FilesystemTree {
+	mode := "live"
+	if !d.IsLive() {
+		mode = "image"
+	}
+	rootPaths := d.treeRoots()
+	nodes := make([]models.TreeNode, 0)
+
+	var walk func(path, parent string)
+	walk = func(path, parent string) {
+		info, err := d.OSStat(path)
+		if err == nil {
+			nodes = append(nodes, buildTreeNode(path, parent, info))
+		}
+
+		entries, err := d.OSReadDir(path)
+		if err != nil {
+			return
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			childPath := filepath.Join(path, name)
+			if entry.Type()&os.ModeSymlink != 0 {
+				childInfo, err := entry.Info()
+				if err == nil {
+					nodes = append(nodes, buildTreeNode(childPath, path, childInfo))
+				}
+				continue
+			}
+			if entry.IsDir() {
+				walk(childPath, path)
+				continue
+			}
+			childInfo, err := entry.Info()
+			if err == nil {
+				nodes = append(nodes, buildTreeNode(childPath, path, childInfo))
+			}
+		}
+	}
+
+	for _, root := range rootPaths {
+		walk(root, "")
+	}
+
+	return models.FilesystemTree{
+		Mode:   mode,
+		Source: mode,
+		Nodes:  nodes,
+	}
+}
+
+func (d *Default) treeRoots() []string {
+	if d.OSName() == "windows" {
+		if d.IsLive() {
+			base := d.OSGetenv("SystemDrive")
+			if base == "" {
+				base = "C:"
+			}
+			return []string{base + "\\"}
+		}
+		return []string{"C:\\"}
+	}
+	return []string{"/"}
+}
+
+func buildTreeNode(path, parent string, info os.FileInfo) models.TreeNode {
+	typeLabel := "file"
+	if info.IsDir() {
+		typeLabel = "directory"
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		typeLabel = "symlink"
+	}
+	return models.TreeNode{
+		Path:         path,
+		Name:         info.Name(),
+		Parent:       parent,
+		Type:         typeLabel,
+		Size:         info.Size(),
+		Permissions:  info.Mode().Perm().String(),
+		ModifiedTime: info.ModTime().Unix(),
+	}
+}
+
 // Shared forensics helper methods in Default
 
 // CopyFileArtifact copies a file if it exists and returns its metadata
@@ -339,6 +489,26 @@ func (d *Default) ReadFileWithLimit(path string, maxSize int64) (string, bool, e
 func (d *Default) CollectARPCacheUnix() []models.ARPEntry {
 	entries := make([]models.ARPEntry, 0)
 
+	if data, err := d.OSReadFile("/proc/net/arp"); err == nil {
+		scanner := bufio.NewScanner(bytes.NewReader(data))
+		scanner.Scan() // Skip header
+		for scanner.Scan() {
+			fields := strings.Fields(scanner.Text())
+			if len(fields) >= 4 {
+				entries = append(entries, models.ARPEntry{
+					IPAddress:  fields[0],
+					MACAddress: fields[3],
+					Type:       "dynamic",
+				})
+			}
+		}
+		return entries
+	}
+
+	if !d.IsLive() {
+		return entries
+	}
+
 	output, err := d.ExecCommand("arp", "-n").Output()
 	if err != nil {
 		return entries
@@ -366,6 +536,9 @@ func (d *Default) CollectARPCacheUnix() []models.ARPEntry {
 // CollectNetstatConnections collects active connections using netstat
 func (d *Default) CollectNetstatConnections(platform string, errors *[]string) []models.NetworkConnection {
 	connections := make([]models.NetworkConnection, 0)
+	if !d.IsLive() {
+		return connections
+	}
 
 	var cmd *exec.Cmd
 	if platform == "windows" {
@@ -474,14 +647,8 @@ func (d *Default) CollectHostsFileCommon(hostsPath string, errors *[]string) *mo
 // CollectSSHKeysCommon collects SSH keys across Unix-like platforms
 func (d *Default) CollectSSHKeysCommon() []models.SSHKeyInfo {
 	keys := make([]models.SSHKeyInfo, 0)
-
-	homeDir, err := d.OSUserHomeDir()
+	homeDirs, err := d.OSUserHomeDirs()
 	if err != nil {
-		return keys
-	}
-
-	sshDir := filepath.Join(homeDir, ".ssh")
-	if _, err := d.OSStat(sshDir); err != nil {
 		return keys
 	}
 
@@ -499,27 +666,34 @@ func (d *Default) CollectSSHKeysCommon() []models.SSHKeyInfo {
 		{"id_ecdsa.pub", "public_key"},
 	}
 
-	for _, kf := range keyFiles {
-		keyPath := filepath.Join(sshDir, kf.name)
-		info, err := d.OSStat(keyPath)
-		if err != nil {
+	for _, homeDir := range homeDirs {
+		sshDir := filepath.Join(homeDir, ".ssh")
+		if _, err := d.OSStat(sshDir); err != nil {
 			continue
 		}
 
-		keyInfo := models.SSHKeyInfo{
-			Path: keyPath,
-			Type: kf.typ,
-			Size: info.Size(),
-		}
-
-		if info.Size() < 100*1024 {
-			content, _, err := d.ReadFileWithLimit(keyPath, 100*1024)
-			if err == nil {
-				keyInfo.Content = content
+		for _, kf := range keyFiles {
+			keyPath := filepath.Join(sshDir, kf.name)
+			info, err := d.OSStat(keyPath)
+			if err != nil {
+				continue
 			}
-		}
 
-		keys = append(keys, keyInfo)
+			keyInfo := models.SSHKeyInfo{
+				Path: keyPath,
+				Type: kf.typ,
+				Size: info.Size(),
+			}
+
+			if info.Size() < 100*1024 {
+				content, _, err := d.ReadFileWithLimit(keyPath, 100*1024)
+				if err == nil {
+					keyInfo.Content = content
+				}
+			}
+
+			keys = append(keys, keyInfo)
+		}
 	}
 
 	return keys
@@ -528,6 +702,9 @@ func (d *Default) CollectSSHKeysCommon() []models.SSHKeyInfo {
 // CollectEnvironmentVariablesCommon collects environment variables
 func (d *Default) CollectEnvironmentVariablesCommon() map[string]string {
 	envVars := make(map[string]string)
+	if !d.IsLive() {
+		return envVars
+	}
 	for _, env := range os.Environ() {
 		parts := strings.SplitN(env, "=", 2)
 		if len(parts) == 2 {
@@ -540,12 +717,15 @@ func (d *Default) CollectEnvironmentVariablesCommon() map[string]string {
 // CollectDownloadsCommon collects recent downloads from Downloads folder
 func (d *Default) CollectDownloadsCommon(additionalPaths []string) []models.RecentFileEntry {
 	downloads := make([]models.RecentFileEntry, 0)
-	homeDir, err := d.OSUserHomeDir()
+	homeDirs, err := d.OSUserHomeDirs()
 	if err != nil {
 		return downloads
 	}
 
-	downloadPaths := []string{filepath.Join(homeDir, "Downloads")}
+	downloadPaths := make([]string, 0, len(homeDirs)+len(additionalPaths))
+	for _, homeDir := range homeDirs {
+		downloadPaths = append(downloadPaths, filepath.Join(homeDir, "Downloads"))
+	}
 	downloadPaths = append(downloadPaths, additionalPaths...)
 
 	for _, downloadPath := range downloadPaths {
@@ -577,24 +757,117 @@ func (d *Default) CollectDownloadsCommon(additionalPaths []string) []models.Rece
 			})
 		}
 	}
-
 	return downloads
+}
+
+func (d *Default) resolveImageUserHomeDir() (string, error) {
+	homes, err := d.resolveImageUserHomeDirs()
+	if err != nil || len(homes) == 0 {
+		fmt.Printf("[os] resolveImageUserHomeDir: no user home found, returning /\n")
+		return "/", fmt.Errorf("no user home directory found in image")
+	}
+	fmt.Printf("[os] resolveImageUserHomeDir: selected=%s\n", homes[0])
+	return homes[0], nil
+}
+
+func (d *Default) resolveImageUserHomeDirs() ([]string, error) {
+	preferred := []string{`/home`, `/Users`}
+	if d.OSName() == "windows" {
+		preferred = []string{`C:\\Users`}
+	}
+	fmt.Printf("[os] resolveImageUserHomeDirs: os=%s preferred=%v\n", d.OSName(), preferred)
+
+	users := make([]string, 0)
+	seen := make(map[string]bool)
+	for _, base := range preferred {
+		entries, err := d.OSReadDir(base)
+		if err != nil {
+			fmt.Printf("[os] resolveImageUserHomeDirs: read dir failed: %s err=%v\n", base, err)
+			continue
+		}
+		fmt.Printf("[os] resolveImageUserHomeDirs: base=%s entries=%d\n", base, len(entries))
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if name == "Default" || name == "Default User" || name == "All Users" || name == "Public" {
+				continue
+			}
+			resolved := filepath.Join(base, name)
+			if seen[resolved] {
+				continue
+			}
+			seen[resolved] = true
+			users = append(users, resolved)
+		}
+	}
+
+	if len(users) == 0 {
+		fmt.Printf("[os] resolveImageUserHomeDirs: no user homes found\n")
+		return nil, fmt.Errorf("no user home directory found in image")
+	}
+	return users, nil
+}
+
+// DetectOSFromImage determines OS based on filesystem artifacts in an image.
+func DetectOSFromImage(accessor *Default) string {
+	checks := []struct {
+		path string
+		os   string
+	}{
+		{"/Windows/System32/config/SYSTEM", "windows"},
+		{"/System/Library/CoreServices/SystemVersion.plist", "darwin"},
+		{"/etc/os-release", "linux"},
+		{"/etc/lsb-release", "linux"},
+		{"/etc/freebsd-update.conf", "freebsd"},
+		{"/etc/openbsd-release", "openbsd"},
+	}
+
+	for _, c := range checks {
+		if _, err := accessor.OSStat(c.path); err == nil {
+			return c.os
+		}
+	}
+
+	return "unknown"
+}
+
+// NewWithOptions returns a collector configured for live or image analysis.
+func NewWithOptions(opts CollectorOptions) (Collector, error) {
+	if opts.ImagePath == "" {
+		return New(), nil
+	}
+
+	def, err := NewDefaultWithOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	def.osName = DetectOSFromImage(def)
+	def.arch = "unknown"
+
+	return newCollectorForOS(def.osName, def), nil
+}
+
+func newCollectorForOS(osName string, def *Default) Collector {
+	switch osName {
+	case "linux":
+		return NewLinuxWithDefault(def)
+	case "darwin":
+		return NewDarwinWithDefault(def)
+	case "windows":
+		return NewWindowsWithDefault(def)
+	case "freebsd":
+		return NewFreeBSDWithDefault(def)
+	case "openbsd":
+		return NewOpenBSDWithDefault(def)
+	default:
+		return def
+	}
 }
 
 // New returns the appropriate OS collector based on the runtime OS
 func New() Collector {
-	switch runtime.GOOS {
-	case "linux":
-		return NewLinux()
-	case "darwin":
-		return NewDarwin()
-	case "windows":
-		return NewWindows()
-	case "freebsd":
-		return NewFreeBSD()
-	case "openbsd":
-		return NewOpenBSD()
-	default:
-		return NewDefault() // Default fallback
-	}
+	return newCollectorForOS(runtime.GOOS, NewDefault())
 }

@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"net"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,13 +23,21 @@ type Linux struct {
 
 // NewLinux creates a new Linux instance
 func NewLinux() Collector {
+	return NewLinuxWithDefault(NewDefault())
+}
+
+// NewLinuxWithDefault creates a new Linux instance with a provided Default.
+func NewLinuxWithDefault(def *Default) Collector {
 	return &Linux{
-		Default: NewDefault(),
+		Default: def,
 	}
 }
 
 // GetCurrentUser returns the current user name
 func (l *Linux) GetCurrentUser() (string, error) {
+	if !l.IsLive() {
+		return "unknown", nil
+	}
 	currentUser, err := l.UserCurrent()
 	if err != nil {
 		return "", err
@@ -145,6 +154,9 @@ func (l *Linux) GetMemoryInfo() models.MemoryInfo {
 // GetDiskInfo returns disk information
 func (l *Linux) GetDiskInfo() []models.DiskInfo {
 	var disks []models.DiskInfo
+	if !l.IsLive() {
+		return disks
+	}
 	data, err := l.OSReadFile("/proc/mounts")
 	if err != nil {
 		return disks
@@ -168,25 +180,14 @@ func (l *Linux) GetDiskInfo() []models.DiskInfo {
 		if strings.HasPrefix(device, "/dev/") && !seen[mountPoint] {
 			seen[mountPoint] = true
 
-			//nolint:gosec // G204: mountPoint is validated from /proc/mounts
-			cmd := l.ExecCommand("df", "-B1", mountPoint)
-			output, err := cmd.Output()
-			if err == nil {
-				lines := strings.Split(string(output), "\n")
-				if len(lines) > 1 {
-					fields := strings.Fields(lines[1])
-					if len(fields) >= 4 {
-						total, _ := strconv.ParseUint(fields[1], 10, 64)
-						used, _ := strconv.ParseUint(fields[2], 10, 64)
+			if total, used, ok := getLinuxDiskUsage(mountPoint); ok {
 
-						disks = append(disks, models.DiskInfo{
-							Path:       mountPoint,
-							Total:      total,
-							Used:       used,
-							FileSystem: fsType,
-						})
-					}
-				}
+				disks = append(disks, models.DiskInfo{
+					Path:       mountPoint,
+					Total:      total,
+					Used:       used,
+					FileSystem: fsType,
+				})
 			}
 		}
 	}
@@ -307,8 +308,12 @@ func (l *Linux) GetProcesses() []models.ProcessInfo {
 					fields := strings.Fields(line)
 					if len(fields) > 1 {
 						uid := fields[1]
-						if u, err := l.UserLookupID(uid); err == nil {
-							procInfo.User = u.Username
+						if l.IsLive() {
+							if u, err := l.UserLookupID(uid); err == nil {
+								procInfo.User = u.Username
+							} else {
+								procInfo.User = uid
+							}
 						} else {
 							procInfo.User = uid
 						}
@@ -337,9 +342,6 @@ func (l *Linux) GetProcesses() []models.ProcessInfo {
 
 		if procInfo.Name != "" {
 			processes = append(processes, procInfo)
-			if len(processes) >= 100 {
-				break
-			}
 		}
 	}
 
@@ -350,70 +352,36 @@ func (l *Linux) GetProcesses() []models.ProcessInfo {
 func (l *Linux) GetServices() []models.ServiceInfo {
 	var services []models.ServiceInfo
 
-	// Try systemctl first
-	cmd := l.ExecCommand("systemctl", "list-units", "--type=service", "--all", "--no-pager", "--no-legend")
-	output, err := cmd.Output()
-	if err == nil {
-		scanner := bufio.NewScanner(bytes.NewReader(output))
-		count := 0
-
-		for scanner.Scan() && count < 50 {
-			line := scanner.Text()
-			fields := strings.Fields(line)
-			if len(fields) >= 4 {
-				name := strings.TrimSuffix(fields[0], ".service")
-				status := "unknown"
-				switch fields[2] {
-				case "active":
-					status = "running"
-				case "inactive", "failed":
-					status = "stopped"
-				}
-
-				description := strings.Join(fields[4:], " ")
-
-				services = append(services, models.ServiceInfo{
-					Name:        name,
-					Status:      status,
-					Description: description,
-				})
-				count++
-			}
-		}
-		return services
+	serviceDirs := []string{
+		"/etc/systemd/system",
+		"/lib/systemd/system",
+		"/usr/lib/systemd/system",
+		"/etc/init.d",
 	}
 
-	// Fallback to service --status-all
-	cmd = l.ExecCommand("service", "--status-all")
-	output, err = cmd.Output()
-	if err != nil {
-		return services
-	}
-
-	scanner := bufio.NewScanner(bytes.NewReader(output))
+	seen := make(map[string]bool)
 	count := 0
 
-	for scanner.Scan() && count < 50 {
-		line := scanner.Text()
-		status := "unknown"
-		name := ""
-
-		switch {
-		case strings.Contains(line, "[+]"):
-			status = "running"
-			name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "[+]"))
-		case strings.Contains(line, "[-]"):
-			status = "stopped"
-			name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "[-]"))
-		case strings.Contains(line, "[?]"):
-			status = "unknown"
-			name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "[?]"))
+	for _, dir := range serviceDirs {
+		entries, err := l.OSReadDir(dir)
+		if err != nil {
+			continue
 		}
-
-		if name != "" {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if strings.HasSuffix(name, ".service") {
+				name = strings.TrimSuffix(name, ".service")
+			}
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
 			services = append(services, models.ServiceInfo{
 				Name:        name,
-				Status:      status,
+				Status:      "unknown",
 				Description: "",
 			})
 			count++
@@ -430,29 +398,34 @@ func (l *Linux) GetServices() []models.ServiceInfo {
 //nolint:dupl // Similar implementation for Linux, slight differences in browser paths
 func (l *Linux) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile {
 	files := make([]models.ForensicFile, 0)
-	homeDir, _ := l.OSUserHomeDir()
-
-	// Chrome
-	chromeBase := filepath.Join(homeDir, ".config", "google-chrome", "Default")
-	for _, name := range []string{"History", "Cookies"} {
-		src := filepath.Join(chromeBase, name)
-		if artifact, err := l.CopyFileArtifact(src, "chrome_"+strings.ToLower(name), "chrome"); err == nil {
-			files = append(files, *artifact)
-		} else if errors != nil {
-			*errors = append(*errors, err.Error())
-		}
+	homeDirs, err := l.OSUserHomeDirs()
+	if err != nil {
+		return files
 	}
 
-	// Firefox
-	firefoxProfiles := filepath.Join(homeDir, ".mozilla", "firefox")
-	if profiles, err := filepath.Glob(filepath.Join(firefoxProfiles, "*.default*")); err == nil {
-		for _, profile := range profiles {
-			for _, name := range []string{"places.sqlite", "cookies.sqlite"} {
-				src := filepath.Join(profile, name)
-				if artifact, err := l.CopyFileArtifact(src, "firefox_"+strings.TrimSuffix(name, ".sqlite"), "firefox"); err == nil {
-					files = append(files, *artifact)
-				} else if errors != nil {
-					*errors = append(*errors, err.Error())
+	for _, homeDir := range homeDirs {
+		// Chrome
+		chromeBase := filepath.Join(homeDir, ".config", "google-chrome", "Default")
+		for _, name := range []string{"History", "Cookies"} {
+			src := filepath.Join(chromeBase, name)
+			if artifact, err := l.CopyFileArtifact(src, "chrome_"+strings.ToLower(name), "chrome"); err == nil {
+				files = append(files, *artifact)
+			} else if errors != nil {
+				*errors = append(*errors, err.Error())
+			}
+		}
+
+		// Firefox
+		firefoxProfiles := filepath.Join(homeDir, ".mozilla", "firefox")
+		if profiles, err := filepath.Glob(filepath.Join(firefoxProfiles, "*.default*")); err == nil {
+			for _, profile := range profiles {
+				for _, name := range []string{"places.sqlite", "cookies.sqlite"} {
+					src := filepath.Join(profile, name)
+					if artifact, err := l.CopyFileArtifact(src, "firefox_"+strings.TrimSuffix(name, ".sqlite"), "firefox"); err == nil {
+						files = append(files, *artifact)
+					} else if errors != nil {
+						*errors = append(*errors, err.Error())
+					}
 				}
 			}
 		}
@@ -464,19 +437,21 @@ func (l *Linux) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile {
 // CollectRecentFiles collects recently accessed files
 func (l *Linux) CollectRecentFiles(_ *[]string) []models.RecentFileEntry {
 	files := make([]models.RecentFileEntry, 0)
-	homeDir, err := l.OSUserHomeDir()
+	homeDirs, err := l.OSUserHomeDirs()
 	if err != nil {
 		return files
 	}
 
-	recentPath := filepath.Join(homeDir, ".local", "share", "recently-used.xbel")
-	if _, err := l.OSStat(recentPath); err == nil {
-		files = append(files, models.RecentFileEntry{
-			FilePath:     recentPath,
-			FileName:     "recently-used.xbel",
-			AccessedTime: time.Now().Unix(),
-			Source:       "xbel",
-		})
+	for _, homeDir := range homeDirs {
+		recentPath := filepath.Join(homeDir, ".local", "share", "recently-used.xbel")
+		if _, err := l.OSStat(recentPath); err == nil {
+			files = append(files, models.RecentFileEntry{
+				FilePath:     recentPath,
+				FileName:     "recently-used.xbel",
+				AccessedTime: time.Now().Unix(),
+				Source:       "xbel",
+			})
+		}
 	}
 
 	return files
@@ -487,44 +462,81 @@ func (l *Linux) CollectRecentFiles(_ *[]string) []models.RecentFileEntry {
 //nolint:dupl // Similar Unix shell history collection, platform-specific behavior
 func (l *Linux) CollectCommandHistory(_ *[]string) []models.CommandEntry {
 	commands := make([]models.CommandEntry, 0)
-	homeDir, err := l.OSUserHomeDir()
+	homeDirs, err := l.OSUserHomeDirs()
 	if err != nil {
 		return commands
 	}
 
-	// Bash history
-	historyPath := filepath.Join(homeDir, ".bash_history")
-	//nolint:gosec // G304: path constructed from trusted UserHomeDir
-	if content, err := l.OSReadFile(historyPath); err == nil {
-		for i, line := range strings.Split(string(content), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				commands = append(commands, models.CommandEntry{
-					Shell:   "bash",
-					Command: line,
-					LineNum: i + 1,
-				})
+	for _, homeDir := range homeDirs {
+		// Bash history
+		historyPath := filepath.Join(homeDir, ".bash_history")
+		//nolint:gosec // G304: path constructed from trusted UserHomeDir
+		if content, err := l.OSReadFile(historyPath); err == nil {
+			for i, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "#") {
+					commands = append(commands, models.CommandEntry{
+						Shell:   "bash",
+						Command: line,
+						LineNum: i + 1,
+					})
+				}
 			}
 		}
-	}
 
-	// Zsh history
-	historyPath = filepath.Join(homeDir, ".zsh_history")
-	//nolint:gosec // G304: path constructed from trusted UserHomeDir
-	if content, err := l.OSReadFile(historyPath); err == nil {
-		for i, line := range strings.Split(string(content), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				if strings.Contains(line, ";") {
-					if parts := strings.SplitN(line, ";", 2); len(parts) == 2 {
-						line = parts[1]
+		// Zsh history
+		historyPath = filepath.Join(homeDir, ".zsh_history")
+		//nolint:gosec // G304: path constructed from trusted UserHomeDir
+		if content, err := l.OSReadFile(historyPath); err == nil {
+			for i, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					if strings.Contains(line, ";") {
+						if parts := strings.SplitN(line, ";", 2); len(parts) == 2 {
+							line = parts[1]
+						}
+					}
+					commands = append(commands, models.CommandEntry{
+						Shell:   "zsh",
+						Command: line,
+						LineNum: i + 1,
+					})
+				}
+			}
+		}
+
+		// Fish history
+		historyPath = filepath.Join(homeDir, ".local", "share", "fish", "fish_history")
+		//nolint:gosec // G304: path constructed from trusted UserHomeDir
+		if content, err := l.OSReadFile(historyPath); err == nil {
+			for i, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "- cmd:") {
+					cmd := strings.TrimSpace(strings.TrimPrefix(line, "- cmd:"))
+					if cmd != "" {
+						commands = append(commands, models.CommandEntry{
+							Shell:   "fish",
+							Command: cmd,
+							LineNum: i + 1,
+						})
 					}
 				}
-				commands = append(commands, models.CommandEntry{
-					Shell:   "zsh",
-					Command: line,
-					LineNum: i + 1,
-				})
+			}
+		}
+
+		// sh history
+		historyPath = filepath.Join(homeDir, ".sh_history")
+		//nolint:gosec // G304: path constructed from trusted UserHomeDir
+		if content, err := l.OSReadFile(historyPath); err == nil {
+			for i, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "#") {
+					commands = append(commands, models.CommandEntry{
+						Shell:   "sh",
+						Command: line,
+						LineNum: i + 1,
+					})
+				}
 			}
 		}
 	}
@@ -576,6 +588,43 @@ func (l *Linux) CollectSystemLogs(errors *[]string) []models.LogFile {
 		})
 	}
 
+	logs = append(logs, collectJournaldLogs(l)...)
+
+	return logs
+}
+
+func collectJournaldLogs(collector SystemPrimitives) []models.LogFile {
+	logs := make([]models.LogFile, 0)
+	base := "/var/log/journal"
+	entries, err := collector.OSReadDir(base)
+	if err != nil {
+		return logs
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dirPath := filepath.Join(base, entry.Name())
+		files, err := collector.OSReadDir(dirPath)
+		if err != nil {
+			continue
+		}
+		for _, file := range files {
+			if file.IsDir() || !strings.HasSuffix(file.Name(), ".journal") {
+				continue
+			}
+			filePath := filepath.Join(dirPath, file.Name())
+			if info, err := collector.OSStat(filePath); err == nil {
+				logs = append(logs, models.LogFile{
+					Name:      file.Name(),
+					Path:      filePath,
+					Size:      info.Size(),
+					Content:   "",
+					Truncated: false,
+				})
+			}
+		}
+	}
 	return logs
 }
 
@@ -583,24 +632,40 @@ func (l *Linux) CollectSystemLogs(errors *[]string) []models.LogFile {
 func (l *Linux) CollectScheduledTasks(_ *[]string) []models.ScheduledTask {
 	tasks := make([]models.ScheduledTask, 0)
 
-	// User crontab
-	if output, err := l.ExecCommand("crontab", "-l").Output(); err == nil {
-		scanner := bufio.NewScanner(bytes.NewReader(output))
+	parseCron := func(content []byte, user string) {
+		scanner := bufio.NewScanner(bytes.NewReader(content))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
-
 			if parts := strings.Fields(line); len(parts) >= 6 {
 				tasks = append(tasks, models.ScheduledTask{
 					Name:     strings.Join(parts[5:], " "),
 					Command:  strings.Join(parts[5:], " "),
 					Schedule: strings.Join(parts[0:5], " "),
-					User:     l.OSGetenv("USER"),
+					User:     user,
 					Enabled:  true,
 					Source:   "crontab",
 				})
+			}
+		}
+	}
+
+	// System crontab
+	if data, err := l.OSReadFile("/etc/crontab"); err == nil {
+		parseCron(data, "root")
+	}
+
+	// User crontabs in /var/spool/cron
+	if entries, err := l.OSReadDir("/var/spool/cron"); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			path := filepath.Join("/var/spool/cron", entry.Name())
+			if data, err := l.OSReadFile(path); err == nil {
+				parseCron(data, entry.Name())
 			}
 		}
 	}
@@ -621,17 +686,26 @@ func (l *Linux) CollectScheduledTasks(_ *[]string) []models.ScheduledTask {
 		}
 	}
 
-	// Systemd timers
-	if output, err := l.ExecCommand("systemctl", "list-timers", "--all", "--no-pager", "--no-legend").Output(); err == nil {
-		scanner := bufio.NewScanner(bytes.NewReader(output))
-		for scanner.Scan() {
-			if fields := strings.Fields(scanner.Text()); len(fields) >= 2 {
+	// Systemd timers from filesystem
+	for _, dir := range []string{"/etc/systemd/system", "/lib/systemd/system", "/usr/lib/systemd/system"} {
+		if entries, err := l.OSReadDir(dir); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".timer") {
+					continue
+				}
 				tasks = append(tasks, models.ScheduledTask{
-					Name:    fields[len(fields)-2],
+					Name:    strings.TrimSuffix(entry.Name(), ".timer"),
 					Source:  "systemd_timer",
 					Enabled: true,
 				})
 			}
+		}
+	}
+
+	// Live-only user crontab command fallback
+	if l.IsLive() {
+		if output, err := l.ExecCommand("crontab", "-l").Output(); err == nil {
+			parseCron(output, l.OSGetenv("USER"))
 		}
 	}
 
@@ -640,7 +714,146 @@ func (l *Linux) CollectScheduledTasks(_ *[]string) []models.ScheduledTask {
 
 // CollectActiveConnections collects active network connections
 func (l *Linux) CollectActiveConnections(errors *[]string) []models.NetworkConnection {
+	if !l.IsLive() {
+		return collectProcNetConnections(l)
+	}
 	return l.CollectNetstatConnections("linux", errors)
+}
+
+func collectProcNetConnections(collector SystemPrimitives) []models.NetworkConnection {
+	connections := make([]models.NetworkConnection, 0)
+	stateMap := map[string]string{
+		"01": "ESTABLISHED",
+		"02": "SYN_SENT",
+		"03": "SYN_RECV",
+		"04": "FIN_WAIT1",
+		"05": "FIN_WAIT2",
+		"06": "TIME_WAIT",
+		"07": "CLOSE",
+		"08": "CLOSE_WAIT",
+		"09": "LAST_ACK",
+		"0A": "LISTEN",
+		"0B": "CLOSING",
+	}
+
+	parseFile := func(path, protocol string, ipv6 bool) {
+		data, err := collector.OSReadFile(path)
+		if err != nil {
+			return
+		}
+		scanner := bufio.NewScanner(bytes.NewReader(data))
+		scanner.Scan() // header
+		for scanner.Scan() {
+			fields := strings.Fields(scanner.Text())
+			if len(fields) < 4 {
+				continue
+			}
+			localAddr, localPort := parseProcNetAddress(fields[1], ipv6)
+			remoteAddr, remotePort := parseProcNetAddress(fields[2], ipv6)
+			state := fields[3]
+			stateName, ok := stateMap[state]
+			if !ok {
+				stateName = state
+			}
+			connections = append(connections, models.NetworkConnection{
+				Protocol:      protocol,
+				LocalAddress:  localAddr,
+				LocalPort:     localPort,
+				RemoteAddress: remoteAddr,
+				RemotePort:    remotePort,
+				State:         stateName,
+			})
+		}
+	}
+
+	parseFile("/proc/net/tcp", "TCP", false)
+	parseFile("/proc/net/tcp6", "TCP", true)
+	parseFile("/proc/net/udp", "UDP", false)
+	parseFile("/proc/net/udp6", "UDP", true)
+	connections = append(connections, collectProcNetUnix(collector)...)
+
+	return connections
+}
+
+func collectProcNetUnix(collector SystemPrimitives) []models.NetworkConnection {
+	connections := make([]models.NetworkConnection, 0)
+	data, err := collector.OSReadFile("/proc/net/unix")
+	if err != nil {
+		return connections
+	}
+	// Header: Num RefCount Protocol Flags Type St Inode Path
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Scan()
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 7 {
+			continue
+		}
+		path := ""
+		if len(fields) >= 8 {
+			path = fields[7]
+		}
+		connections = append(connections, models.NetworkConnection{
+			Protocol:      "UNIX",
+			LocalAddress:  path,
+			RemoteAddress: "",
+			State:         fields[5],
+		})
+		if len(connections) >= 500 {
+			break
+		}
+	}
+	return connections
+}
+
+func parseProcNetAddress(value string, ipv6 bool) (string, int) {
+	parts := strings.Split(value, ":")
+	if len(parts) != 2 {
+		return "", 0
+	}
+
+	portHex := parts[1]
+	port, _ := strconv.ParseInt(portHex, 16, 64)
+
+	addrHex := parts[0]
+	if !ipv6 {
+		return parseHexIPv4(addrHex), int(port)
+	}
+
+	return parseHexIPv6(addrHex), int(port)
+}
+
+func parseHexIPv4(value string) string {
+	if len(value) != 8 {
+		return ""
+	}
+	bytes := make([]byte, 4)
+	for i := 0; i < 4; i++ {
+		b, err := strconv.ParseUint(value[i*2:(i+1)*2], 16, 8)
+		if err != nil {
+			return ""
+		}
+		bytes[i] = byte(b)
+	}
+	return net.IPv4(bytes[3], bytes[2], bytes[1], bytes[0]).String()
+}
+
+func parseHexIPv6(value string) string {
+	if len(value) != 32 {
+		return ""
+	}
+	bytes := make([]byte, 16)
+	for i := 0; i < 16; i++ {
+		b, err := strconv.ParseUint(value[i*2:(i+1)*2], 16, 8)
+		if err != nil {
+			return ""
+		}
+		bytes[i] = byte(b)
+	}
+	for i := 0; i < 16; i += 4 {
+		bytes[i], bytes[i+1], bytes[i+2], bytes[i+3] = bytes[i+3], bytes[i+2], bytes[i+1], bytes[i]
+	}
+	return net.IP(bytes).String()
 }
 
 // CollectHostsFile collects the hosts file
@@ -656,6 +869,42 @@ func (l *Linux) CollectSSHKeys(_ *[]string) []models.SSHKeyInfo {
 // CollectInstalledSoftware collects installed software information
 func (l *Linux) CollectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 	software := make([]models.SoftwareInfo, 0)
+
+	if data, err := l.OSReadFile("/var/lib/dpkg/status"); err == nil {
+		var name, version string
+		scanner := bufio.NewScanner(bytes.NewReader(data))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			switch {
+			case strings.HasPrefix(line, "Package:"):
+				name = strings.TrimSpace(strings.TrimPrefix(line, "Package:"))
+			case strings.HasPrefix(line, "Version:"):
+				version = strings.TrimSpace(strings.TrimPrefix(line, "Version:"))
+			case line == "" && name != "":
+				software = append(software, models.SoftwareInfo{
+					Name:    name,
+					Version: version,
+					Source:  "dpkg",
+				})
+				name, version = "", ""
+			}
+		}
+		if len(software) > 0 {
+			return software
+		}
+	}
+
+	if pacman := collectPacmanPackages(l); len(pacman) > 0 {
+		return pacman
+	}
+
+	if rpm := collectRpmPackages(l); len(rpm) > 0 {
+		return rpm
+	}
+
+	if !l.IsLive() {
+		return software
+	}
 
 	packageManagers := []struct {
 		cmd    string
@@ -689,10 +938,6 @@ func (l *Linux) CollectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 		}
 	}
 
-	if len(software) > 500 {
-		software = software[:500]
-	}
-
 	return software
 }
 
@@ -709,6 +954,9 @@ func (l *Linux) CollectRecentDownloads(_ *[]string) []models.RecentFileEntry {
 // CollectUSBHistory collects USB device connection history
 func (l *Linux) CollectUSBHistory(_ *[]string) []models.USBDevice {
 	devices := make([]models.USBDevice, 0)
+	if !l.IsLive() {
+		return devices
+	}
 
 	if output, err := l.ExecCommand("dmesg").Output(); err == nil {
 		scanner := bufio.NewScanner(bytes.NewReader(output))
@@ -734,19 +982,24 @@ func (l *Linux) CollectPrefetchFiles(_ *[]string) []models.PrefetchInfo {
 // CollectRecycleBin collects recycle bin contents
 func (l *Linux) CollectRecycleBin(_ *[]string) []models.DeletedFile {
 	deletedFiles := make([]models.DeletedFile, 0)
-	homeDir, _ := l.OSUserHomeDir()
-	trashPath := filepath.Join(homeDir, ".local", "share", "Trash", "files")
+	homeDirs, err := l.OSUserHomeDirs()
+	if err != nil {
+		return deletedFiles
+	}
 
-	if entries, err := l.OSReadDir(trashPath); err == nil {
-		for _, entry := range entries {
-			if info, err := entry.Info(); err == nil {
-				deletedFiles = append(deletedFiles, models.DeletedFile{
-					DeletedPath:  filepath.Join(trashPath, entry.Name()),
-					FileName:     entry.Name(),
-					Size:         info.Size(),
-					DeletedTime:  info.ModTime().Unix(),
-					OriginalPath: "unknown",
-				})
+	for _, homeDir := range homeDirs {
+		trashPath := filepath.Join(homeDir, ".local", "share", "Trash", "files")
+		if entries, err := l.OSReadDir(trashPath); err == nil {
+			for _, entry := range entries {
+				if info, err := entry.Info(); err == nil {
+					deletedFiles = append(deletedFiles, models.DeletedFile{
+						DeletedPath:  filepath.Join(trashPath, entry.Name()),
+						FileName:     entry.Name(),
+						Size:         info.Size(),
+						DeletedTime:  info.ModTime().Unix(),
+						OriginalPath: "unknown",
+					})
+				}
 			}
 		}
 	}
@@ -756,6 +1009,9 @@ func (l *Linux) CollectRecycleBin(_ *[]string) []models.DeletedFile {
 
 // CollectClipboard collects current clipboard content
 func (l *Linux) CollectClipboard(errors *[]string) string {
+	if !l.IsLive() {
+		return ""
+	}
 	cmd := l.ExecCommand("xclip", "-selection", "clipboard", "-o")
 	if _, err := l.ExecCommand("which", "xclip").Output(); err != nil {
 		cmd = l.ExecCommand("xsel", "--clipboard", "--output")

@@ -9,6 +9,7 @@ type SystemData struct {
 	Network      NetworkInfo        `json:"network"`
 	Security     SecurityInfo       `json:"security"`
 	Forensics    ForensicsData      `json:"forensics"`
+	Tree         FilesystemTree     `json:"tree"`
 	CustodyChain *CustodyChainEntry `json:"custody_chain"` // Custody Chain - Complete digital evidence custody tracking
 }
 
@@ -102,6 +103,29 @@ type ForensicsData struct {
 	RecycleBin        []DeletedFile       `json:"recycle_bin,omitempty"`
 	ClipboardContent  string              `json:"clipboard_content,omitempty"`
 	CollectionErrors  []string            `json:"collection_errors,omitempty"`
+}
+
+// FilesystemTree represents the full filesystem tree of the analyzed system.
+type FilesystemTree struct {
+	Mode   string     `json:"mode"`   // live or image
+	Source string     `json:"source"` // live or image
+	Nodes  []TreeNode `json:"nodes"`
+}
+
+// TreeNode represents a file or directory in the filesystem tree.
+type TreeNode struct {
+	Path         string `json:"path"`
+	Name         string `json:"name"`
+	Parent       string `json:"parent"`
+	Type         string `json:"type"` // file, directory, symlink
+	Size         int64  `json:"size"`
+	Permissions  string `json:"permissions,omitempty"`
+	Owner        string `json:"owner,omitempty"`
+	Group        string `json:"group,omitempty"`
+	Inode        uint64 `json:"inode,omitempty"`
+	AccessedTime int64  `json:"accessed_time,omitempty"`
+	ModifiedTime int64  `json:"modified_time,omitempty"`
+	CreatedTime  int64  `json:"created_time,omitempty"`
 }
 
 // ForensicFile represents a collected artifact file (e.g., browser DB)

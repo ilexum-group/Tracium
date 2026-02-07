@@ -21,14 +21,22 @@ type Darwin struct {
 }
 
 // NewDarwin creates a new Darwin instance
-func NewDarwin() *Darwin {
+func NewDarwin() Collector {
+	return NewDarwinWithDefault(NewDefault())
+}
+
+// NewDarwinWithDefault creates a new Darwin instance with a provided Default.
+func NewDarwinWithDefault(def *Default) Collector {
 	return &Darwin{
-		Default: NewDefault(),
+		Default: def,
 	}
 }
 
 // GetCurrentUser returns the current user name
 func (d *Darwin) GetCurrentUser() (string, error) {
+	if !d.IsLive() {
+		return "unknown", nil
+	}
 	currentUser, err := d.UserCurrent()
 	if err != nil {
 		return "", err
@@ -39,6 +47,9 @@ func (d *Darwin) GetCurrentUser() (string, error) {
 
 // GetUptime returns the system uptime in seconds
 func (d *Darwin) GetUptime() int64 {
+	if !d.IsLive() {
+		return 0
+	}
 	cmd := d.ExecCommand("sysctl", "-n", "kern.boottime")
 	output, err := cmd.Output()
 	if err != nil {
@@ -86,6 +97,8 @@ func (d *Darwin) GetUsers() []string {
 		}
 	}
 
+	users = append(users, collectDarwinUsersFromPlist(d)...)
+
 	return users
 }
 
@@ -94,6 +107,9 @@ func (d *Darwin) GetCPUInfo() models.CPUInfo {
 	cpuInfo := models.CPUInfo{
 		Cores: 0,
 		Model: "Unknown",
+	}
+	if !d.IsLive() {
+		return cpuInfo
 	}
 
 	cmd := d.ExecCommand("sysctl", "-n", "machdep.cpu.brand_string")
@@ -115,6 +131,9 @@ func (d *Darwin) GetCPUInfo() models.CPUInfo {
 // GetMemoryInfo returns memory information
 func (d *Darwin) GetMemoryInfo() models.MemoryInfo {
 	memInfo := models.MemoryInfo{}
+	if !d.IsLive() {
+		return memInfo
+	}
 
 	// Get total memory
 	cmd := d.ExecCommand("sysctl", "-n", "hw.memsize")
@@ -163,6 +182,9 @@ func (d *Darwin) GetMemoryInfo() models.MemoryInfo {
 // GetDiskInfo returns disk information
 func (d *Darwin) GetDiskInfo() []models.DiskInfo {
 	var disks []models.DiskInfo
+	if !d.IsLive() {
+		return disks
+	}
 	cmd := d.ExecCommand("df", "-k")
 	output, err := cmd.Output()
 	if err != nil {
@@ -196,6 +218,9 @@ func (d *Darwin) GetDiskInfo() []models.DiskInfo {
 //nolint:dupl // Similar netstat parsing, OS-specific differences in output format
 func (d *Darwin) GetListeningPorts(seen map[int]bool) []int {
 	var ports []int
+	if !d.IsLive() {
+		return ports
+	}
 	cmd := d.ExecCommand("netstat", "-an")
 	output, err := cmd.Output()
 	if err != nil {
@@ -228,6 +253,9 @@ func (d *Darwin) GetListeningPorts(seen map[int]bool) []int {
 // GetProcesses returns running processes
 func (d *Darwin) GetProcesses() []models.ProcessInfo {
 	var processes []models.ProcessInfo
+	if !d.IsLive() {
+		return processes
+	}
 	cmd := d.ExecCommand("ps", "-eo", "pid,user,comm,%cpu,rss")
 	output, err := cmd.Output()
 	if err != nil {
@@ -262,6 +290,9 @@ func (d *Darwin) GetProcesses() []models.ProcessInfo {
 // GetServices returns system services
 func (d *Darwin) GetServices() []models.ServiceInfo {
 	var services []models.ServiceInfo
+	if !d.IsLive() {
+		return services
+	}
 	cmd := d.ExecCommand("launchctl", "list")
 	output, err := cmd.Output()
 	if err != nil {
@@ -298,40 +329,45 @@ func (d *Darwin) GetServices() []models.ServiceInfo {
 // CollectBrowserDBFiles collects browser database files
 func (d *Darwin) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile {
 	files := make([]models.ForensicFile, 0)
-	homeDir, _ := d.OSUserHomeDir()
-
-	// Chrome
-	chromeBase := filepath.Join(homeDir, "Library", "Application Support", "Google", "Chrome", "Default")
-	for _, name := range []string{"History", "Cookies"} {
-		src := filepath.Join(chromeBase, name)
-		if artifact, err := d.CopyFileArtifact(src, "chrome_"+strings.ToLower(name), "chrome"); err == nil {
-			files = append(files, *artifact)
-		} else if errors != nil {
-			*errors = append(*errors, err.Error())
-		}
+	homeDirs, err := d.OSUserHomeDirs()
+	if err != nil {
+		return files
 	}
 
-	// Safari
-	safariBase := filepath.Join(homeDir, "Library", "Safari")
-	for _, name := range []string{"History.db", "Cookies.binarycookies"} {
-		src := filepath.Join(safariBase, name)
-		if artifact, err := d.CopyFileArtifact(src, "safari_"+strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name))), "safari"); err == nil {
-			files = append(files, *artifact)
-		} else if errors != nil {
-			*errors = append(*errors, err.Error())
+	for _, homeDir := range homeDirs {
+		// Chrome
+		chromeBase := filepath.Join(homeDir, "Library", "Application Support", "Google", "Chrome", "Default")
+		for _, name := range []string{"History", "Cookies"} {
+			src := filepath.Join(chromeBase, name)
+			if artifact, err := d.CopyFileArtifact(src, "chrome_"+strings.ToLower(name), "chrome"); err == nil {
+				files = append(files, *artifact)
+			} else if errors != nil {
+				*errors = append(*errors, err.Error())
+			}
 		}
-	}
 
-	// Firefox
-	firefoxProfiles := filepath.Join(homeDir, "Library", "Application Support", "Firefox", "Profiles")
-	if profiles, err := filepath.Glob(filepath.Join(firefoxProfiles, "*.default*")); err == nil {
-		for _, profile := range profiles {
-			for _, name := range []string{"places.sqlite", "cookies.sqlite"} {
-				src := filepath.Join(profile, name)
-				if artifact, err := d.CopyFileArtifact(src, "firefox_"+strings.TrimSuffix(name, ".sqlite"), "firefox"); err == nil {
-					files = append(files, *artifact)
-				} else if errors != nil {
-					*errors = append(*errors, err.Error())
+		// Safari
+		safariBase := filepath.Join(homeDir, "Library", "Safari")
+		for _, name := range []string{"History.db", "Cookies.binarycookies"} {
+			src := filepath.Join(safariBase, name)
+			if artifact, err := d.CopyFileArtifact(src, "safari_"+strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name))), "safari"); err == nil {
+				files = append(files, *artifact)
+			} else if errors != nil {
+				*errors = append(*errors, err.Error())
+			}
+		}
+
+		// Firefox
+		firefoxProfiles := filepath.Join(homeDir, "Library", "Application Support", "Firefox", "Profiles")
+		if profiles, err := filepath.Glob(filepath.Join(firefoxProfiles, "*.default*")); err == nil {
+			for _, profile := range profiles {
+				for _, name := range []string{"places.sqlite", "cookies.sqlite"} {
+					src := filepath.Join(profile, name)
+					if artifact, err := d.CopyFileArtifact(src, "firefox_"+strings.TrimSuffix(name, ".sqlite"), "firefox"); err == nil {
+						files = append(files, *artifact)
+					} else if errors != nil {
+						*errors = append(*errors, err.Error())
+					}
 				}
 			}
 		}
@@ -343,21 +379,23 @@ func (d *Darwin) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile {
 // CollectRecentFiles collects recently accessed files
 func (d *Darwin) CollectRecentFiles(_ *[]string) []models.RecentFileEntry {
 	files := make([]models.RecentFileEntry, 0)
-	homeDir, err := d.OSUserHomeDir()
+	homeDirs, err := d.OSUserHomeDirs()
 	if err != nil {
 		return files
 	}
 
-	recentItemsPath := filepath.Join(homeDir, "Library", "Application Support", "com.apple.sharedfilelist")
-	if entries, err := d.OSReadDir(recentItemsPath); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				files = append(files, models.RecentFileEntry{
-					FilePath:     filepath.Join(recentItemsPath, entry.Name()),
-					FileName:     entry.Name(),
-					AccessedTime: time.Now().Unix(),
-					Source:       "sharedfilelist",
-				})
+	for _, homeDir := range homeDirs {
+		recentItemsPath := filepath.Join(homeDir, "Library", "Application Support", "com.apple.sharedfilelist")
+		if entries, err := d.OSReadDir(recentItemsPath); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					files = append(files, models.RecentFileEntry{
+						FilePath:     filepath.Join(recentItemsPath, entry.Name()),
+						FileName:     entry.Name(),
+						AccessedTime: time.Now().Unix(),
+						Source:       "sharedfilelist",
+					})
+				}
 			}
 		}
 	}
@@ -370,44 +408,46 @@ func (d *Darwin) CollectRecentFiles(_ *[]string) []models.RecentFileEntry {
 //nolint:dupl // Similar Unix shell history collection, platform-specific paths
 func (d *Darwin) CollectCommandHistory(_ *[]string) []models.CommandEntry {
 	commands := make([]models.CommandEntry, 0)
-	homeDir, err := d.OSUserHomeDir()
+	homeDirs, err := d.OSUserHomeDirs()
 	if err != nil {
 		return commands
 	}
 
-	// Bash history
-	historyPath := filepath.Join(homeDir, ".bash_history")
-	//nolint:gosec // G304: path constructed from trusted UserHomeDir
-	if content, err := d.OSReadFile(historyPath); err == nil {
-		for i, line := range strings.Split(string(content), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				commands = append(commands, models.CommandEntry{
-					Shell:   "bash",
-					Command: line,
-					LineNum: i + 1,
-				})
+	for _, homeDir := range homeDirs {
+		// Bash history
+		historyPath := filepath.Join(homeDir, ".bash_history")
+		//nolint:gosec // G304: path constructed from trusted UserHomeDir
+		if content, err := d.OSReadFile(historyPath); err == nil {
+			for i, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "#") {
+					commands = append(commands, models.CommandEntry{
+						Shell:   "bash",
+						Command: line,
+						LineNum: i + 1,
+					})
+				}
 			}
 		}
-	}
 
-	// Zsh history (default on macOS Catalina+)
-	historyPath = filepath.Join(homeDir, ".zsh_history")
-	//nolint:gosec // G304: path constructed from trusted UserHomeDir
-	if content, err := d.OSReadFile(historyPath); err == nil {
-		for i, line := range strings.Split(string(content), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				if strings.Contains(line, ";") {
-					if parts := strings.SplitN(line, ";", 2); len(parts) == 2 {
-						line = parts[1]
+		// Zsh history (default on macOS Catalina+)
+		historyPath = filepath.Join(homeDir, ".zsh_history")
+		//nolint:gosec // G304: path constructed from trusted UserHomeDir
+		if content, err := d.OSReadFile(historyPath); err == nil {
+			for i, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					if strings.Contains(line, ";") {
+						if parts := strings.SplitN(line, ";", 2); len(parts) == 2 {
+							line = parts[1]
+						}
 					}
+					commands = append(commands, models.CommandEntry{
+						Shell:   "zsh",
+						Command: line,
+						LineNum: i + 1,
+					})
 				}
-				commands = append(commands, models.CommandEntry{
-					Shell:   "zsh",
-					Command: line,
-					LineNum: i + 1,
-				})
 			}
 		}
 	}
@@ -456,6 +496,8 @@ func (d *Darwin) CollectSystemLogs(errors *[]string) []models.LogFile {
 		})
 	}
 
+	logs = append(logs, collectDarwinUnifiedLogs(d)...)
+
 	return logs
 }
 
@@ -464,47 +506,49 @@ func (d *Darwin) CollectScheduledTasks(_ *[]string) []models.ScheduledTask {
 	tasks := make([]models.ScheduledTask, 0)
 
 	// User launchd agents
-	homeDir, _ := d.OSUserHomeDir()
+	homeDirs, _ := d.OSUserHomeDirs()
 	agentDirs := []string{
-		filepath.Join(homeDir, "Library", "LaunchAgents"),
 		"/Library/LaunchAgents",
 		"/Library/LaunchDaemons",
 		"/System/Library/LaunchAgents",
 		"/System/Library/LaunchDaemons",
+	}
+	for _, homeDir := range homeDirs {
+		agentDirs = append(agentDirs, filepath.Join(homeDir, "Library", "LaunchAgents"))
 	}
 
 	for _, dir := range agentDirs {
 		if entries, err := d.OSReadDir(dir); err == nil {
 			for _, entry := range entries {
 				if !entry.IsDir() && filepath.Ext(entry.Name()) == ".plist" {
-					tasks = append(tasks, models.ScheduledTask{
-						Name:    entry.Name(),
-						Command: filepath.Join(dir, entry.Name()),
-						Source:  "launchd",
-						Enabled: true,
-					})
+					plistPath := filepath.Join(dir, entry.Name())
+					if task := parseLaunchdPlist(d, plistPath, dir); task != nil {
+						tasks = append(tasks, *task)
+					}
 				}
 			}
 		}
 	}
 
 	// User crontab
-	if output, err := d.ExecCommand("crontab", "-l").Output(); err == nil {
-		scanner := bufio.NewScanner(bytes.NewReader(output))
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
+	if d.IsLive() {
+		if output, err := d.ExecCommand("crontab", "-l").Output(); err == nil {
+			scanner := bufio.NewScanner(bytes.NewReader(output))
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
 
-			if parts := strings.Fields(line); len(parts) >= 6 {
-				tasks = append(tasks, models.ScheduledTask{
-					Name:     strings.Join(parts[5:], " "),
-					Command:  strings.Join(parts[5:], " "),
-					Schedule: strings.Join(parts[0:5], " "),
-					Enabled:  true,
-					Source:   "crontab",
-				})
+				if parts := strings.Fields(line); len(parts) >= 6 {
+					tasks = append(tasks, models.ScheduledTask{
+						Name:     strings.Join(parts[5:], " "),
+						Command:  strings.Join(parts[5:], " "),
+						Schedule: strings.Join(parts[0:5], " "),
+						Enabled:  true,
+						Source:   "crontab",
+					})
+				}
 			}
 		}
 	}
@@ -530,37 +574,22 @@ func (d *Darwin) CollectSSHKeys(_ *[]string) []models.SSHKeyInfo {
 // CollectInstalledSoftware collects installed software information
 func (d *Darwin) CollectInstalledSoftware(_ *[]string) []models.SoftwareInfo {
 	software := make([]models.SoftwareInfo, 0)
+	software = append(software, collectDarwinApplications(d)...)
+	software = append(software, collectDarwinReceipts(d)...)
 
-	// Homebrew packages
-	if output, err := d.ExecCommand("brew", "list", "--versions").Output(); err == nil {
-		scanner := bufio.NewScanner(bytes.NewReader(output))
-		for scanner.Scan() {
-			if fields := strings.Fields(scanner.Text()); len(fields) >= 2 {
-				software = append(software, models.SoftwareInfo{
-					Name:    fields[0],
-					Version: fields[1],
-					Source:  "homebrew",
-				})
+	if d.IsLive() {
+		if output, err := d.ExecCommand("brew", "list", "--versions").Output(); err == nil {
+			scanner := bufio.NewScanner(bytes.NewReader(output))
+			for scanner.Scan() {
+				if fields := strings.Fields(scanner.Text()); len(fields) >= 2 {
+					software = append(software, models.SoftwareInfo{
+						Name:    fields[0],
+						Version: fields[1],
+						Source:  "homebrew",
+					})
+				}
 			}
 		}
-	}
-
-	// Applications folder
-	if entries, err := d.OSReadDir("/Applications"); err == nil {
-		for _, entry := range entries {
-			if filepath.Ext(entry.Name()) == ".app" {
-				appName := strings.TrimSuffix(entry.Name(), ".app")
-				software = append(software, models.SoftwareInfo{
-					Name:    appName,
-					Version: "unknown",
-					Source:  "applications",
-				})
-			}
-		}
-	}
-
-	if len(software) > 500 {
-		software = software[:500]
 	}
 
 	return software
@@ -579,6 +608,9 @@ func (d *Darwin) CollectRecentDownloads(_ *[]string) []models.RecentFileEntry {
 // CollectUSBHistory collects USB device connection history
 func (d *Darwin) CollectUSBHistory(_ *[]string) []models.USBDevice {
 	devices := make([]models.USBDevice, 0)
+	if !d.IsLive() {
+		return devices
+	}
 
 	if output, err := d.ExecCommand("system_profiler", "SPUSBDataType").Output(); err == nil {
 		scanner := bufio.NewScanner(bytes.NewReader(output))
@@ -604,19 +636,24 @@ func (d *Darwin) CollectPrefetchFiles(_ *[]string) []models.PrefetchInfo {
 // CollectRecycleBin collects trash contents
 func (d *Darwin) CollectRecycleBin(_ *[]string) []models.DeletedFile {
 	deletedFiles := make([]models.DeletedFile, 0)
-	homeDir, _ := d.OSUserHomeDir()
-	trashPath := filepath.Join(homeDir, ".Trash")
+	homeDirs, err := d.OSUserHomeDirs()
+	if err != nil {
+		return deletedFiles
+	}
 
-	if entries, err := d.OSReadDir(trashPath); err == nil {
-		for _, entry := range entries {
-			if info, err := entry.Info(); err == nil {
-				deletedFiles = append(deletedFiles, models.DeletedFile{
-					DeletedPath:  filepath.Join(trashPath, entry.Name()),
-					FileName:     entry.Name(),
-					Size:         info.Size(),
-					DeletedTime:  info.ModTime().Unix(),
-					OriginalPath: "unknown",
-				})
+	for _, homeDir := range homeDirs {
+		trashPath := filepath.Join(homeDir, ".Trash")
+		if entries, err := d.OSReadDir(trashPath); err == nil {
+			for _, entry := range entries {
+				if info, err := entry.Info(); err == nil {
+					deletedFiles = append(deletedFiles, models.DeletedFile{
+						DeletedPath:  filepath.Join(trashPath, entry.Name()),
+						FileName:     entry.Name(),
+						Size:         info.Size(),
+						DeletedTime:  info.ModTime().Unix(),
+						OriginalPath: "unknown",
+					})
+				}
 			}
 		}
 	}
@@ -626,6 +663,9 @@ func (d *Darwin) CollectRecycleBin(_ *[]string) []models.DeletedFile {
 
 // CollectClipboard collects current clipboard content
 func (d *Darwin) CollectClipboard(errors *[]string) string {
+	if !d.IsLive() {
+		return ""
+	}
 	output, err := d.ExecCommand("pbpaste").Output()
 	if err != nil {
 		if errors != nil {

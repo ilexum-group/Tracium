@@ -12,6 +12,7 @@ type Config struct {
 	ServerURL  string
 	AgentToken string
 	CaseID     string
+	ImagePath  string
 }
 
 const usage = `Tracium - System Information Acquisition Agent
@@ -26,6 +27,7 @@ Options:
   --server URL            Remote server endpoint URL (required)
   --token TOKEN           Authentication token for remote server (required)
   --case-id ID            Case identifier for correlation (required)
+	--image PATH            Path to forensic image for post-mortem analysis
 
 Examples:
   # Basic system information collection
@@ -33,6 +35,9 @@ Examples:
 
   # System information with forensics data
   tracium --server https://api.tracium.com/v1/data --token TOKEN --case-id "CASE-2025-001" --forensics
+
+	# Post-mortem analysis from a forensic image
+	tracium --server https://api.tracium.com/v1/data --token TOKEN --case-id "CASE-2025-001" --image "E:\\images\\disk.dd"
 
 Chain of Custody:
   All data is collected in read-only mode without system modifications.
@@ -53,6 +58,7 @@ func ParseFlags() *Config {
 	fs.StringVar(&cfg.ServerURL, "server", "", "Remote server endpoint URL")
 	fs.StringVar(&cfg.AgentToken, "token", "", "Authentication token for remote server")
 	fs.StringVar(&cfg.CaseID, "case-id", "", "Case identifier for correlation")
+	fs.StringVar(&cfg.ImagePath, "image", "", "Path to forensic image for post-mortem analysis")
 
 	// Handle help and version
 	helpFlag := fs.Bool("help", false, "Show help message")
