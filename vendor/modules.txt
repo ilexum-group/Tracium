@@ -16,7 +16,7 @@ github.com/google/uuid
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
 github.com/mattn/go-isatty
-# github.com/ncruces/go-strftime v0.1.9
+# github.com/ncruces/go-strftime v0.1.10
 ## explicit; go 1.17
 github.com/ncruces/go-strftime
 # github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec
