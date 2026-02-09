@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -326,56 +327,61 @@ func (d *Default) CollectClipboard(_ *[]string) string {
 	return ""
 }
 
-// CollectFilesystemTree builds a filesystem tree using file-based enumeration.
-func (d *Default) CollectFilesystemTree() models.FilesystemTree {
-	mode := "live"
-	if !d.IsLive() {
-		mode = "image"
-	}
-	rootPaths := d.treeRoots()
-	nodes := make([]models.TreeNode, 0)
-
-	var walk func(path, parent string)
-	walk = func(path, parent string) {
-		info, err := d.OSStat(path)
-		if err == nil {
-			nodes = append(nodes, buildTreeNode(path, parent, info))
-		}
-
-		entries, err := d.OSReadDir(path)
-		if err != nil {
-			return
-		}
-		for _, entry := range entries {
-			name := entry.Name()
-			childPath := filepath.Join(path, name)
-			if entry.Type()&os.ModeSymlink != 0 {
-				childInfo, err := entry.Info()
-				if err == nil {
-					nodes = append(nodes, buildTreeNode(childPath, path, childInfo))
-				}
-				continue
-			}
-			if entry.IsDir() {
-				walk(childPath, path)
-				continue
-			}
-			childInfo, err := entry.Info()
-			if err == nil {
-				nodes = append(nodes, buildTreeNode(childPath, path, childInfo))
-			}
-		}
+func (d *Default) collectFilesystemTreeImage() models.FilesystemTree {
+	accessor, ok := d.fileAccessor.(*imageFileAccessor)
+	if !ok {
+		return models.FilesystemTree{Nodes: []models.TreeNode{}}
 	}
 
-	for _, root := range rootPaths {
-		walk(root, "")
+	// Incluye archivos borrados y no borrados
+	cmd := exec.Command("fls", "-r", "-p", "-o", strconv.FormatInt(accessor.offset, 10), accessor.imagePath)
+	output, err := cmd.Output()
+	if err != nil {
+		return models.FilesystemTree{Nodes: []models.TreeNode{}}
 	}
 
+	nodes := parseFlsOutput(output)
 	return models.FilesystemTree{
-		Mode:   mode,
-		Source: mode,
-		Nodes:  nodes,
+		Nodes: nodes,
 	}
+}
+
+// CollectFilesystemTree collects filesystem tree for Default (fallback implementation)
+func (d *Default) CollectFilesystemTree() models.FilesystemTree {
+	if d.IsLive() {
+		return models.FilesystemTree{Nodes: d.collectTreeWithTreeCommand()}
+	}
+	return d.collectFilesystemTreeImage()
+}
+
+func (d *Default) collectTreeWithTreeCommand() []models.TreeNode {
+	root := d.treeRoots()
+	rootPath := "/"
+	if len(root) > 0 {
+		rootPath = root[0]
+	}
+	cmd := d.ExecCommand("tree", "-a", "-f", "-i", "-n", rootPath)
+	output, err := cmd.Output()
+	if err != nil {
+		return []models.TreeNode{}
+	}
+
+	nodes := make([]models.TreeNode, 0)
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "[") || strings.HasPrefix(line, "directories,") {
+			continue
+		}
+		p := strings.TrimSpace(line)
+		nodes = append(nodes, models.TreeNode{
+			Path:   p,
+			Name:   filepath.Base(p),
+			Parent: parentPath(p),
+			Type:   "file",
+		})
+	}
+	return nodes
 }
 
 func (d *Default) treeRoots() []string {
@@ -408,6 +414,104 @@ func buildTreeNode(path, parent string, info os.FileInfo) models.TreeNode {
 		Permissions:  info.Mode().Perm().String(),
 		ModifiedTime: info.ModTime().Unix(),
 	}
+}
+
+func parseFlsOutput(output []byte) []models.TreeNode {
+	nodes := make([]models.TreeNode, 0)
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		deleted := false
+		// Detecta archivos borrados (líneas que empiezan con '*')
+		if strings.HasPrefix(line, "*") || strings.Contains(line, "deleted") {
+			deleted = true
+			line = strings.TrimPrefix(line, "*")
+			line = strings.TrimSpace(line)
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		left := strings.TrimSpace(parts[0])
+		pathStr := strings.TrimSpace(parts[1])
+		fields := strings.Fields(left)
+		inode := uint64(0)
+		if len(fields) > 0 {
+			if v, err := strconv.ParseUint(fields[len(fields)-1], 10, 64); err == nil {
+				inode = v
+			}
+		}
+		fileType := "file"
+		if strings.HasPrefix(left, "d/") {
+			fileType = "directory"
+		} else if strings.HasPrefix(left, "l/") {
+			fileType = "symlink"
+		}
+		nodes = append(nodes, models.TreeNode{
+			Path:    pathStr,
+			Name:    filepath.Base(pathStr),
+			Parent:  parentPath(pathStr),
+			Type:    fileType,
+			Inode:   inode,
+			Deleted: deleted,
+		})
+	}
+	return nodes
+}
+
+func parseInt64(value string) int64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	v, err := strconv.ParseInt(value, 10, 64)
+	if err == nil {
+		return v
+	}
+	f, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(f)
+}
+
+func parseFloatTime(value string) int64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(f)
+}
+
+func parseTimeToUnix(value string) int64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return ts.Unix()
+	}
+	if ts, err := time.Parse(time.RFC3339, value); err == nil {
+		return ts.Unix()
+	}
+	if ts, err := time.Parse("1/2/2006 3:04:05 PM", value); err == nil {
+		return ts.Unix()
+	}
+	return 0
+}
+
+func parentPath(p string) string {
+	if strings.Contains(p, "/") && !strings.Contains(p, "\\") {
+		return path.Dir(p)
+	}
+	return filepath.Dir(p)
 }
 
 // Shared forensics helper methods in Default

@@ -197,6 +197,7 @@ func (i *imageFileAccessor) Open(path string) (*os.File, error) {
 }
 
 func (i *imageFileAccessor) Stat(path string) (fs.FileInfo, error) {
+	fmt.Printf("[image_accessor] Stat: path=%s\n", path)
 	inode, err := i.findInode(path)
 	if err != nil {
 		return nil, err

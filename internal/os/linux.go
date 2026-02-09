@@ -1032,3 +1032,65 @@ func (l *Linux) CollectClipboard(errors *[]string) string {
 
 	return content
 }
+
+// CollectFilesystemTree collects filesystem tree for Linux
+func (l *Linux) CollectFilesystemTree() models.FilesystemTree {
+	if l.IsLive() {
+		return l.collectFilesystemTreeLive()
+	}
+	return l.collectFilesystemTreeImage()
+}
+
+func (l *Linux) collectFilesystemTreeLive() models.FilesystemTree {
+	cmd := l.ExecCommand("find", "/", "-xdev", "-printf", "%p|%y|%s|%u|%g|%m|%T@\n")
+	output, err := cmd.Output()
+	if err != nil {
+		return models.FilesystemTree{Nodes: l.collectTreeWithTreeCommand()}
+	}
+	return models.FilesystemTree{Nodes: parseLinuxFindOutput(output)}
+}
+
+func parseLinuxFindOutput(output []byte) []models.TreeNode {
+	nodes := make([]models.TreeNode, 0)
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 7)
+		if len(parts) < 7 {
+			continue
+		}
+		pathStr := parts[0]
+		fileType := mapFindType(parts[1])
+		size := parseInt64(parts[2])
+		owner := parts[3]
+		group := parts[4]
+		perm := parts[5]
+		mtime := parseFloatTime(parts[6])
+		nodes = append(nodes, models.TreeNode{
+			Path:         pathStr,
+			Name:         filepath.Base(pathStr),
+			Parent:       parentPath(pathStr),
+			Type:         fileType,
+			Size:         size,
+			Owner:        owner,
+			Group:        group,
+			Permissions:  perm,
+			ModifiedTime: mtime,
+		})
+	}
+	return nodes
+}
+
+func mapFindType(t string) string {
+	switch t {
+	case "d":
+		return "directory"
+	case "l":
+		return "symlink"
+	default:
+		return "file"
+	}
+}

@@ -107,9 +107,7 @@ type ForensicsData struct {
 
 // FilesystemTree represents the full filesystem tree of the analyzed system.
 type FilesystemTree struct {
-	Mode   string     `json:"mode"`   // live or image
-	Source string     `json:"source"` // live or image
-	Nodes  []TreeNode `json:"nodes"`
+	Nodes []TreeNode `json:"nodes"`
 }
 
 // TreeNode represents a file or directory in the filesystem tree.
@@ -119,6 +117,7 @@ type TreeNode struct {
 	Parent       string `json:"parent"`
 	Type         string `json:"type"` // file, directory, symlink
 	Size         int64  `json:"size"`
+	Deleted      bool   `json:"deleted,omitempty"`
 	Permissions  string `json:"permissions,omitempty"`
 	Owner        string `json:"owner,omitempty"`
 	Group        string `json:"group,omitempty"`

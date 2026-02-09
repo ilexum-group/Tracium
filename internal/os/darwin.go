@@ -681,3 +681,20 @@ func (d *Darwin) CollectClipboard(errors *[]string) string {
 
 	return content
 }
+
+// CollectFilesystemTree collects filesystem tree for macOS
+func (d *Darwin) CollectFilesystemTree() models.FilesystemTree {
+	if d.IsLive() {
+		return d.collectFilesystemTreeLive()
+	}
+	return d.collectFilesystemTreeImage()
+}
+
+func (d *Darwin) collectFilesystemTreeLive() models.FilesystemTree {
+	cmd := d.ExecCommand("sh", "-c", "find / -xdev -print0 | xargs -0 stat -f '%N|%HT|%z|%Su|%Sg|%Lp|%m'")
+	output, err := cmd.Output()
+	if err != nil {
+		return models.FilesystemTree{Nodes: d.collectTreeWithTreeCommand()}
+	}
+	return models.FilesystemTree{Nodes: parseBSDStatOutput(output)}
+}

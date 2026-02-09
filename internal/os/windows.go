@@ -6,6 +6,7 @@ package os
 import (
 	"bufio"
 	"bytes"
+	"encoding/csv"
 	"encoding/xml"
 	"fmt"
 	"path/filepath"
@@ -1050,4 +1051,75 @@ func (w *Windows) CollectClipboard(errors *[]string) string {
 	}
 
 	return content
+}
+
+// CollectFilesystemTree collects filesystem tree for Windows
+func (w *Windows) CollectFilesystemTree() models.FilesystemTree {
+	if w.IsLive() {
+		return w.collectFilesystemTreeLive()
+	}
+	return w.collectFilesystemTreeImage()
+}
+
+func (w *Windows) collectFilesystemTreeLive() models.FilesystemTree {
+	root := w.treeRoots()
+	rootPath := "C:\\"
+	if len(root) > 0 {
+		rootPath = root[0]
+	}
+	ps := fmt.Sprintf("Get-ChildItem '%s' -Recurse -Force -ErrorAction SilentlyContinue | Select-Object FullName, Length, Mode, CreationTimeUtc, LastWriteTimeUtc | ConvertTo-Csv -NoTypeInformation", rootPath)
+	cmd := w.ExecCommand("powershell", "-Command", ps)
+	output, err := cmd.Output()
+	if err != nil {
+		return models.FilesystemTree{Nodes: w.collectTreeWithTreeCommand()}
+	}
+	return models.FilesystemTree{Nodes: parseWindowsPSOutput(output)}
+}
+
+func parseWindowsPSOutput(output []byte) []models.TreeNode {
+	reader := csv.NewReader(bytes.NewReader(output))
+	records, err := reader.ReadAll()
+	if err != nil || len(records) < 2 {
+		return []models.TreeNode{}
+	}
+
+	idx := make(map[string]int)
+	for i, name := range records[0] {
+		idx[strings.TrimSpace(name)] = i
+	}
+
+	get := func(row []string, key string) string {
+		pos, ok := idx[key]
+		if !ok || pos >= len(row) {
+			return ""
+		}
+		return row[pos]
+	}
+
+	nodes := make([]models.TreeNode, 0, len(records)-1)
+	for _, row := range records[1:] {
+		pathStr := strings.TrimSpace(get(row, "FullName"))
+		if pathStr == "" {
+			continue
+		}
+		mode := strings.TrimSpace(get(row, "Mode"))
+		fileType := "file"
+		if strings.HasPrefix(mode, "d") {
+			fileType = "directory"
+		}
+		size := parseInt64(get(row, "Length"))
+		ctime := parseTimeToUnix(get(row, "CreationTimeUtc"))
+		mtime := parseTimeToUnix(get(row, "LastWriteTimeUtc"))
+		nodes = append(nodes, models.TreeNode{
+			Path:         pathStr,
+			Name:         filepath.Base(pathStr),
+			Parent:       parentPath(pathStr),
+			Type:         fileType,
+			Size:         size,
+			Permissions:  mode,
+			CreatedTime:  ctime,
+			ModifiedTime: mtime,
+		})
+	}
+	return nodes
 }
