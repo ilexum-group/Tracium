@@ -60,7 +60,8 @@ type Collector interface {
 	GetServices() []models.ServiceInfo
 
 	// Forensics methods
-	CollectBrowserDBFiles(errors *[]string) []models.ForensicFile
+	CollectBrowserArtifacts(errors *[]string) models.BrowserArtifacts
+	CollectCommunicationArtifacts(errors *[]string) models.CommunicationArtifacts
 	CollectRecentFiles(errors *[]string) []models.RecentFileEntry
 	CollectCommandHistory(errors *[]string) []models.CommandEntry
 	CollectNetworkHistory(errors *[]string) models.NetworkHistoryData
@@ -247,9 +248,14 @@ func (d *Default) GetServices() []models.ServiceInfo {
 	return []models.ServiceInfo{}
 }
 
-// CollectBrowserDBFiles collects browser database files (dummy implementation)
-func (d *Default) CollectBrowserDBFiles(_ *[]string) []models.ForensicFile {
-	return []models.ForensicFile{}
+// CollectBrowserArtifacts collects browser artifacts (dummy implementation)
+func (d *Default) CollectBrowserArtifacts(_ *[]string) models.BrowserArtifacts {
+	return models.BrowserArtifacts{}
+}
+
+// CollectCommunicationArtifacts collects communication artifacts (dummy implementation)
+func (d *Default) CollectCommunicationArtifacts(_ *[]string) models.CommunicationArtifacts {
+	return models.CommunicationArtifacts{}
 }
 
 // CollectRecentFiles collects recently accessed files (dummy implementation)
@@ -334,13 +340,24 @@ func (d *Default) collectFilesystemTreeImage() models.FilesystemTree {
 	}
 
 	// Incluye archivos borrados y no borrados
-	cmd := exec.Command("fls", "-r", "-p", "-o", strconv.FormatInt(accessor.offset, 10), accessor.imagePath)
+	cmd := d.ExecCommand("fls", "-r", "-p", "-o", strconv.FormatInt(accessor.offset, 10), accessor.imagePath)
+	fmt.Printf("[os] collectFilesystemTreeImage: running command: %s\n", strings.Join(cmd.Args, " "))
 	output, err := cmd.Output()
 	if err != nil {
+		fmt.Printf("[os] collectFilesystemTreeImage: fls error: %v\n", err)
 		return models.FilesystemTree{Nodes: []models.TreeNode{}}
 	}
+	fmt.Printf("[os] collectFilesystemTreeImage: fls output size=%d bytes\n", len(output))
 
 	nodes := parseFlsOutput(output)
+	deletedCount := 0
+	for _, n := range nodes {
+		if n.Deleted {
+			deletedCount++
+		}
+	}
+	fmt.Printf("[os] collectFilesystemTreeImage: parsed %d nodes (%d deleted)\n", len(nodes), deletedCount)
+
 	return models.FilesystemTree{
 		Nodes: nodes,
 	}
@@ -425,12 +442,6 @@ func parseFlsOutput(output []byte) []models.TreeNode {
 			continue
 		}
 		deleted := false
-		// Detecta archivos borrados (líneas que empiezan con '*')
-		if strings.HasPrefix(line, "*") || strings.Contains(line, "deleted") {
-			deleted = true
-			line = strings.TrimPrefix(line, "*")
-			line = strings.TrimSpace(line)
-		}
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) != 2 {
 			continue
@@ -439,6 +450,20 @@ func parseFlsOutput(output []byte) []models.TreeNode {
 		pathStr := strings.TrimSpace(parts[1])
 		fields := strings.Fields(left)
 		inode := uint64(0)
+
+		for _, f := range fields {
+			if f == "*" {
+				deleted = true
+				if strings.Contains(pathStr, "Users") {
+					fmt.Printf("path deleted = %s\n", pathStr)
+				}
+				continue
+			}
+			if n, err := strconv.ParseUint(f, 10, 64); err == nil {
+				inode = n
+			}
+		}
+
 		if len(fields) > 0 {
 			if v, err := strconv.ParseUint(fields[len(fields)-1], 10, 64); err == nil {
 				inode = v
@@ -862,6 +887,174 @@ func (d *Default) CollectDownloadsCommon(additionalPaths []string) []models.Rece
 		}
 	}
 	return downloads
+}
+
+// collectChromeProfileArtifacts collects Chrome/Chromium profile artifacts (shared by Linux and Darwin)
+func (d *Default) collectChromeProfileArtifacts(profileDir string, browser *models.BrowserArtifacts, errors *[]string) {
+	if _, err := d.OSStat(profileDir); err != nil {
+		return
+	}
+
+	// History
+	historyFiles := []string{"History", "History.db"}
+	for _, name := range historyFiles {
+		src := filepath.Join(profileDir, name)
+		if artifact, err := d.CopyFileArtifact(src, "chrome_history", "chrome"); err == nil {
+			artifact.Category = "history"
+			browser.History = append(browser.History, *artifact)
+		} else if errors != nil && !strings.Contains(err.Error(), "artifact missing") {
+			*errors = append(*errors, err.Error())
+		}
+	}
+
+	// Cookies
+	cookieFiles := []string{"Cookies", "Cookies.db"}
+	for _, name := range cookieFiles {
+		src := filepath.Join(profileDir, name)
+		if artifact, err := d.CopyFileArtifact(src, "chrome_cookies", "chrome"); err == nil {
+			artifact.Category = "cookies"
+			browser.Cookies = append(browser.Cookies, *artifact)
+		} else if errors != nil && !strings.Contains(err.Error(), "artifact missing") {
+			*errors = append(*errors, err.Error())
+		}
+	}
+
+	// Downloads
+	downloadFiles := []string{"DownloadMetadata"}
+	for _, name := range downloadFiles {
+		src := filepath.Join(profileDir, name)
+		if artifact, err := d.CopyFileArtifact(src, "chrome_downloads", "chrome"); err == nil {
+			artifact.Category = "downloads"
+			browser.Downloads = append(browser.Downloads, *artifact)
+		}
+	}
+
+	// Bookmarks
+	src := filepath.Join(profileDir, "Bookmarks")
+	if artifact, err := d.CopyFileArtifact(src, "chrome_bookmarks", "chrome"); err == nil {
+		artifact.Category = "bookmarks"
+		browser.Bookmarks = append(browser.Bookmarks, *artifact)
+	}
+
+	// Login/Autofill
+	autofillFiles := []string{"Login Data", "Web Data", "Login Data.db", "Web Data.db"}
+	for _, name := range autofillFiles {
+		src := filepath.Join(profileDir, name)
+		if artifact, err := d.CopyFileArtifact(src, "chrome_autofill", "chrome"); err == nil {
+			artifact.Category = "form_autofill"
+			browser.FormAutofill = append(browser.FormAutofill, *artifact)
+		}
+	}
+
+	// Cache
+	cachePaths := []string{
+		filepath.Join(profileDir, "Cache"),
+		filepath.Join(profileDir, "Code Cache"),
+		filepath.Join(profileDir, "GPUCache"),
+	}
+	for _, cachePath := range cachePaths {
+		if _, err := d.OSStat(cachePath); err == nil {
+			if artifact, err := d.CopyFileArtifact(cachePath, "chrome_cache", "chrome"); err == nil {
+				artifact.Category = "cache"
+				browser.Cache = append(browser.Cache, *artifact)
+			}
+		}
+	}
+
+	// Extensions
+	extensionsDir := filepath.Join(profileDir, "Extensions")
+	if entries, err := d.OSReadDir(extensionsDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				extDir := filepath.Join(extensionsDir, entry.Name())
+				if artifact, err := d.CopyFileArtifact(extDir, "chrome_ext", "chrome"); err == nil {
+					artifact.Category = "chromium_extension"
+					browser.ChromiumExtensions = append(browser.ChromiumExtensions, *artifact)
+				}
+			}
+		}
+	}
+
+	// Preferences file (indicates a valid profile)
+	prefFile := filepath.Join(profileDir, "Preferences")
+	if _, err := d.OSStat(prefFile); err == nil {
+		if artifact, err := d.CopyFileArtifact(prefFile, "chrome_prefs", "chrome"); err == nil {
+			artifact.Category = "chromium_profile"
+			browser.ChromiumProfiles = append(browser.ChromiumProfiles, *artifact)
+		}
+	}
+
+	// Search history
+	searchFiles := []string{"Search History", "Visited Links"}
+	for _, name := range searchFiles {
+		src := filepath.Join(profileDir, name)
+		if artifact, err := d.CopyFileArtifact(src, "chrome_search", "chrome"); err == nil {
+			artifact.Category = "search_history"
+			browser.SearchHistory = append(browser.SearchHistory, *artifact)
+		}
+	}
+}
+
+// collectThunderbirdArtifacts collects Thunderbird email artifacts (shared by Linux and Darwin)
+func (d *Default) collectThunderbirdArtifacts(profileDir string, comm *models.CommunicationArtifacts, errors *[]string) {
+	if _, err := d.OSStat(profileDir); err != nil {
+		return
+	}
+
+	// Mail directory
+	mailDir := filepath.Join(profileDir, "Mail")
+	if entries, err := d.OSReadDir(mailDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				mailboxPath := filepath.Join(mailDir, entry.Name())
+				d.collectMailboxArtifacts(mailboxPath, comm, errors)
+			}
+		}
+	}
+
+	// ImapMail directory (remote mail)
+	imapDir := filepath.Join(profileDir, "ImapMail")
+	if entries, err := d.OSReadDir(imapDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				mailboxPath := filepath.Join(imapDir, entry.Name())
+				d.collectMailboxArtifacts(mailboxPath, comm, errors)
+			}
+		}
+	}
+}
+
+// collectMailboxArtifacts collects mailbox artifacts (MBOX files) - shared helper
+func (d *Default) collectMailboxArtifacts(mailboxPath string, comm *models.CommunicationArtifacts, errors *[]string) {
+	if _, err := d.OSStat(mailboxPath); err != nil {
+		return
+	}
+
+	// Check if it's an mbox file
+	files, err := filepath.Glob(filepath.Join(mailboxPath, "*.mbox"))
+	if err == nil {
+		for _, mboxFile := range files {
+			filename := filepath.Base(mboxFile)
+			lowerName := strings.ToLower(filename)
+
+			var target *[]models.ForensicFile
+			switch {
+			case strings.Contains(lowerName, "draft"):
+				target = &comm.Emails.Gmail.Drafts
+			case strings.Contains(lowerName, "sent") || strings.Contains(lowerName, "outbox"):
+				target = &comm.Emails.Gmail.Sent
+			case strings.Contains(lowerName, "trash") || strings.Contains(lowerName, "deleted"):
+				target = &comm.Emails.Gmail.Trash
+			default:
+				target = &comm.Emails.Default
+			}
+
+			if artifact, err := d.CopyFileArtifact(mboxFile, "mbox_"+filename, "thunderbird"); err == nil {
+				artifact.Category = "email_default"
+				*target = append(*target, *artifact)
+			}
+		}
+	}
 }
 
 func (d *Default) resolveImageUserHomeDir() (string, error) {

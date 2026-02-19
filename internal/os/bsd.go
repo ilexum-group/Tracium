@@ -438,9 +438,14 @@ func getBSDProcesses(s SystemPrimitives) []models.ProcessInfo {
 
 // Forensics methods implementation for FreeBSD
 
-// CollectBrowserDBFiles collects browser database files
-func (f *FreeBSD) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile {
-	return collectBrowserDBFilesUnix(f, errors)
+// CollectBrowserArtifacts collects browser artifacts on FreeBSD
+func (f *FreeBSD) CollectBrowserArtifacts(errors *[]string) models.BrowserArtifacts {
+	return f.Default.CollectBrowserArtifacts(errors)
+}
+
+// CollectCommunicationArtifacts collects communication artifacts on FreeBSD
+func (f *FreeBSD) CollectCommunicationArtifacts(errors *[]string) models.CommunicationArtifacts {
+	return f.Default.CollectCommunicationArtifacts(errors)
 }
 
 // CollectRecentFiles collects recently accessed files
@@ -586,9 +591,14 @@ func (f *FreeBSD) CollectClipboard(errors *[]string) string {
 
 // Forensics methods implementation for OpenBSD
 
-// CollectBrowserDBFiles collects browser database files
-func (o *OpenBSD) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile {
-	return collectBrowserDBFilesUnix(o, errors)
+// CollectBrowserArtifacts collects browser artifacts on OpenBSD
+func (o *OpenBSD) CollectBrowserArtifacts(errors *[]string) models.BrowserArtifacts {
+	return o.Default.CollectBrowserArtifacts(errors)
+}
+
+// CollectCommunicationArtifacts collects communication artifacts on OpenBSD
+func (o *OpenBSD) CollectCommunicationArtifacts(errors *[]string) models.CommunicationArtifacts {
+	return o.Default.CollectCommunicationArtifacts(errors)
 }
 
 // CollectRecentFiles collects recently accessed files

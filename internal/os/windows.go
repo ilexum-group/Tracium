@@ -450,54 +450,181 @@ func (w *Windows) GetServices() []models.ServiceInfo {
 
 // Forensics methods implementation for Windows
 
-// CollectBrowserDBFiles collects browser database files
-func (w *Windows) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile {
-	files := make([]models.ForensicFile, 0)
+// CollectBrowserArtifacts collects structured browser artifacts on Windows
+func (w *Windows) CollectBrowserArtifacts(errors *[]string) models.BrowserArtifacts {
+	browser := models.BrowserArtifacts{
+		ChromiumProfiles:   make([]models.ForensicFile, 0),
+		ChromiumExtensions: make([]models.ForensicFile, 0),
+		Bookmarks:          make([]models.ForensicFile, 0),
+		Cache:              make([]models.ForensicFile, 0),
+		Cookies:            make([]models.ForensicFile, 0),
+		Downloads:          make([]models.ForensicFile, 0),
+		FormAutofill:       make([]models.ForensicFile, 0),
+		History:            make([]models.ForensicFile, 0),
+		SearchHistory:      make([]models.ForensicFile, 0),
+	}
+
 	homeDirs, err := w.OSUserHomeDirs()
 	if err != nil {
-		return files
+		return browser
 	}
 
 	for _, homeDir := range homeDirs {
 		// Chrome
-		chromeBase := filepath.Join(homeDir, "AppData", "Local", "Google", "Chrome", "User Data", "Default")
-		for _, name := range []string{"History", "Cookies"} {
-			src := filepath.Join(chromeBase, name)
-			if artifact, err := w.CopyFileArtifact(src, "chrome_"+strings.ToLower(name), "chrome"); err == nil {
-				files = append(files, *artifact)
-			} else if errors != nil {
-				*errors = append(*errors, err.Error())
-			}
-		}
+		chromeBase := filepath.Join(homeDir, "AppData", "Local", "Google", "Chrome", "User Data")
+		w.collectChromeProfileArtifactsWindows(chromeBase, &browser, errors)
 
 		// Edge
-		edgeBase := filepath.Join(homeDir, "AppData", "Local", "Microsoft", "Edge", "User Data", "Default")
-		for _, name := range []string{"History", "Cookies"} {
-			src := filepath.Join(edgeBase, name)
-			if artifact, err := w.CopyFileArtifact(src, "edge_"+strings.ToLower(name), "edge"); err == nil {
-				files = append(files, *artifact)
-			} else if errors != nil {
-				*errors = append(*errors, err.Error())
-			}
-		}
+		edgeBase := filepath.Join(homeDir, "AppData", "Local", "Microsoft", "Edge", "User Data")
+		w.collectChromeProfileArtifactsWindows(edgeBase, &browser, errors)
 
 		// Firefox
 		firefoxProfiles := filepath.Join(homeDir, "AppData", "Roaming", "Mozilla", "Firefox", "Profiles")
 		if profiles, err := filepath.Glob(filepath.Join(firefoxProfiles, "*.default*")); err == nil {
 			for _, profile := range profiles {
-				for _, name := range []string{"places.sqlite", "cookies.sqlite"} {
-					src := filepath.Join(profile, name)
-					if artifact, err := w.CopyFileArtifact(src, "firefox_"+strings.TrimSuffix(name, ".sqlite"), "firefox"); err == nil {
-						files = append(files, *artifact)
-					} else if errors != nil {
-						*errors = append(*errors, err.Error())
+				w.collectFirefoxArtifactsWindows(profile, &browser, errors)
+			}
+		}
+
+		// Opera
+		operaBase := filepath.Join(homeDir, "AppData", "Roaming", "Opera Software", "Opera Stable")
+		w.collectChromeProfileArtifactsWindows(operaBase, &browser, errors)
+
+		// Brave
+		braveBase := filepath.Join(homeDir, "AppData", "Local", "BraveSoftware", "Brave-Browser", "User Data")
+		w.collectChromeProfileArtifactsWindows(braveBase, &browser, errors)
+	}
+
+	return browser
+}
+
+// collectChromeProfileArtifactsWindows collects Chrome/Chromium artifacts on Windows
+func (w *Windows) collectChromeProfileArtifactsWindows(baseDir string, browser *models.BrowserArtifacts, errors *[]string) {
+	// Try Default profile first
+	defaultProfile := filepath.Join(baseDir, "Default")
+	w.collectChromeProfileArtifacts(defaultProfile, browser, errors)
+
+	// Try profile directories
+	if entries, err := w.OSReadDir(baseDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			profileDir := filepath.Join(baseDir, entry.Name())
+			w.collectChromeProfileArtifacts(profileDir, browser, errors)
+		}
+	}
+}
+
+// collectFirefoxArtifactsWindows collects Firefox artifacts on Windows
+func (w *Windows) collectFirefoxArtifactsWindows(profileDir string, browser *models.BrowserArtifacts, errors *[]string) {
+	if _, err := w.OSStat(profileDir); err != nil {
+		return
+	}
+
+	// History
+	src := filepath.Join(profileDir, "places.sqlite")
+	if artifact, err := w.CopyFileArtifact(src, "firefox_places", "firefox"); err == nil {
+		artifact.Category = "history"
+		browser.History = append(browser.History, *artifact)
+	} else if errors != nil && !strings.Contains(err.Error(), "artifact missing") {
+		*errors = append(*errors, err.Error())
+	}
+
+	// Cookies
+	src = filepath.Join(profileDir, "cookies.sqlite")
+	if artifact, err := w.CopyFileArtifact(src, "firefox_cookies", "firefox"); err == nil {
+		artifact.Category = "cookies"
+		browser.Cookies = append(browser.Cookies, *artifact)
+	}
+
+	// Downloads
+	src = filepath.Join(profileDir, "downloads.sqlite")
+	if artifact, err := w.CopyFileArtifact(src, "firefox_downloads", "firefox"); err == nil {
+		artifact.Category = "downloads"
+		browser.Downloads = append(browser.Downloads, *artifact)
+	}
+
+	// Bookmarks
+	src = filepath.Join(profileDir, "bookmarks.sqlite")
+	if artifact, err := w.CopyFileArtifact(src, "firefox_bookmarks", "firefox"); err == nil {
+		artifact.Category = "bookmarks"
+		browser.Bookmarks = append(browser.Bookmarks, *artifact)
+	}
+
+	// Cache
+	cacheDir := filepath.Join(profileDir, "cache2")
+	if _, err := w.OSStat(cacheDir); err == nil {
+		if artifact, err := w.CopyFileArtifact(cacheDir, "firefox_cache", "firefox"); err == nil {
+			artifact.Category = "cache"
+			browser.Cache = append(browser.Cache, *artifact)
+		}
+	}
+}
+
+// CollectCommunicationArtifacts collects communication artifacts on Windows
+func (w *Windows) CollectCommunicationArtifacts(errors *[]string) models.CommunicationArtifacts {
+	comm := models.CommunicationArtifacts{
+		Accounts: make([]models.ForensicFile, 0),
+		Emails: models.EmailArtifacts{
+			Default: make([]models.ForensicFile, 0),
+			Gmail: models.GmailFolders{
+				Drafts: make([]models.ForensicFile, 0),
+				Sent:   make([]models.ForensicFile, 0),
+				Trash:  make([]models.ForensicFile, 0),
+			},
+		},
+	}
+
+	homeDirs, err := w.OSUserHomeDirs()
+	if err != nil {
+		return comm
+	}
+
+	for _, homeDir := range homeDirs {
+		// Outlook PST files
+		outlookPaths := []string{
+			filepath.Join(homeDir, "Documents", "Outlook Files"),
+			filepath.Join(homeDir, "AppData", "Local", "Microsoft", "Outlook"),
+		}
+		for _, outlookPath := range outlookPaths {
+			if entries, err := w.OSReadDir(outlookPath); err == nil {
+				for _, entry := range entries {
+					if !entry.IsDir() {
+						continue
+					}
+					// Look for PST/OST files
+					pstPath := filepath.Join(outlookPath, entry.Name())
+					if strings.HasSuffix(strings.ToLower(entry.Name()), ".pst") ||
+						strings.HasSuffix(strings.ToLower(entry.Name()), ".ost") {
+						if artifact, err := w.CopyFileArtifact(pstPath, "outlook_"+entry.Name(), "outlook"); err == nil {
+							artifact.Category = "email_message"
+							comm.Emails.Default = append(comm.Emails.Default, *artifact)
+						}
 					}
 				}
 			}
 		}
+
+		// Windows Mail
+		mailBase := filepath.Join(homeDir, "AppData", "Local", "Comms", "Unistore", "data")
+		if _, err := w.OSStat(mailBase); err == nil {
+			if artifact, err := w.CopyFileArtifact(mailBase, "windowsmail_data", "windows-mail"); err == nil {
+				artifact.Category = "email_default"
+				comm.Emails.Default = append(comm.Emails.Default, *artifact)
+			}
+		}
+
+		// Thunderbird
+		thunderbirdPath := filepath.Join(homeDir, "AppData", "Roaming", "Thunderbird", "Profiles")
+		if profiles, err := filepath.Glob(filepath.Join(thunderbirdPath, "*.default*")); err == nil {
+			for _, profile := range profiles {
+				w.collectThunderbirdArtifacts(profile, &comm, errors)
+			}
+		}
 	}
 
-	return files
+	return comm
 }
 
 // CollectRecentFiles collects recently accessed files

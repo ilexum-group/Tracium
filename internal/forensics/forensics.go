@@ -2,6 +2,9 @@
 package forensics
 
 import (
+	"os"
+
+	"github.com/ilexum-group/tracium/internal/artifactdetector"
 	osinfo "github.com/ilexum-group/tracium/internal/os"
 	"github.com/ilexum-group/tracium/pkg/models"
 )
@@ -28,8 +31,11 @@ func (f *Forensics) Collect() models.ForensicsData {
 		CollectionErrors: make([]string, 0),
 	}
 
-	f.custodyChain.LogInfo("Forensics", "Collecting browser database files")
-	forensics.BrowserDBFiles = f.collector.CollectBrowserDBFiles(&forensics.CollectionErrors)
+	f.custodyChain.LogInfo("Forensics", "Collecting browser artifacts")
+	forensics.Browser = f.collector.CollectBrowserArtifacts(&forensics.CollectionErrors)
+
+	f.custodyChain.LogInfo("Forensics", "Collecting communication artifacts")
+	forensics.Communication = f.collector.CollectCommunicationArtifacts(&forensics.CollectionErrors)
 
 	f.custodyChain.LogInfo("Forensics", "Collecting recent files")
 	forensics.RecentFiles = f.collector.CollectRecentFiles(&forensics.CollectionErrors)
@@ -88,7 +94,8 @@ func CollectForensicsData() models.ForensicsData {
 		CollectionErrors: make([]string, 0),
 	}
 
-	forensics.BrowserDBFiles = collector.CollectBrowserDBFiles(&forensics.CollectionErrors)
+	forensics.Browser = collector.CollectBrowserArtifacts(&forensics.CollectionErrors)
+	forensics.Communication = collector.CollectCommunicationArtifacts(&forensics.CollectionErrors)
 	forensics.RecentFiles = collector.CollectRecentFiles(&forensics.CollectionErrors)
 	forensics.CommandHistory = collector.CollectCommandHistory(&forensics.CollectionErrors)
 	forensics.NetworkHistory = collector.CollectNetworkHistory(&forensics.CollectionErrors)
@@ -106,4 +113,112 @@ func CollectForensicsData() models.ForensicsData {
 	forensics.ClipboardContent = collector.CollectClipboard(&forensics.CollectionErrors)
 
 	return forensics
+}
+
+// ClassifyBrowserArtifacts applies signature-based classification to browser artifacts
+func ClassifyBrowserArtifacts(browser models.BrowserArtifacts) models.BrowserArtifacts {
+	result := browser
+
+	// Classify Chromium profiles
+	for i := range result.ChromiumProfiles {
+		result.ChromiumProfiles[i] = artifactdetector.ClassifyBrowserArtifact(result.ChromiumProfiles[i])
+	}
+
+	// Classify Chromium extensions
+	for i := range result.ChromiumExtensions {
+		result.ChromiumExtensions[i] = artifactdetector.ClassifyBrowserArtifact(result.ChromiumExtensions[i])
+	}
+
+	// Classify bookmarks
+	for i := range result.Bookmarks {
+		result.Bookmarks[i] = artifactdetector.ClassifyBrowserArtifact(result.Bookmarks[i])
+	}
+
+	// Classify cache
+	for i := range result.Cache {
+		result.Cache[i] = artifactdetector.ClassifyBrowserArtifact(result.Cache[i])
+	}
+
+	// Classify cookies
+	for i := range result.Cookies {
+		result.Cookies[i] = artifactdetector.ClassifyBrowserArtifact(result.Cookies[i])
+	}
+
+	// Classify downloads
+	for i := range result.Downloads {
+		result.Downloads[i] = artifactdetector.ClassifyBrowserArtifact(result.Downloads[i])
+	}
+
+	// Classify form autofill
+	for i := range result.FormAutofill {
+		result.FormAutofill[i] = artifactdetector.ClassifyBrowserArtifact(result.FormAutofill[i])
+	}
+
+	// Classify history
+	for i := range result.History {
+		result.History[i] = artifactdetector.ClassifyBrowserArtifact(result.History[i])
+	}
+
+	// Classify search history
+	for i := range result.SearchHistory {
+		result.SearchHistory[i] = artifactdetector.ClassifyBrowserArtifact(result.SearchHistory[i])
+	}
+
+	return result
+}
+
+// ClassifyCommunicationArtifacts applies signature-based classification to communication artifacts
+func ClassifyCommunicationArtifacts(comm models.CommunicationArtifacts) models.CommunicationArtifacts {
+	result := comm
+
+	// Classify accounts
+	for i := range result.Accounts {
+		result.Accounts[i] = artifactdetector.ClassifyCommunicationArtifact(result.Accounts[i])
+	}
+
+	// Classify default emails
+	for i := range result.Emails.Default {
+		result.Emails.Default[i] = artifactdetector.ClassifyCommunicationArtifact(result.Emails.Default[i])
+	}
+
+	// Classify Gmail drafts
+	for i := range result.Emails.Gmail.Drafts {
+		result.Emails.Gmail.Drafts[i] = artifactdetector.ClassifyCommunicationArtifact(result.Emails.Gmail.Drafts[i])
+	}
+
+	// Classify Gmail sent
+	for i := range result.Emails.Gmail.Sent {
+		result.Emails.Gmail.Sent[i] = artifactdetector.ClassifyCommunicationArtifact(result.Emails.Gmail.Sent[i])
+	}
+
+	// Classify Gmail trash
+	for i := range result.Emails.Gmail.Trash {
+		result.Emails.Gmail.Trash[i] = artifactdetector.ClassifyCommunicationArtifact(result.Emails.Gmail.Trash[i])
+	}
+
+	return result
+}
+
+// DetectAndClassifyArtifact applies signature-based detection and classification to any forensic file
+func DetectAndClassifyArtifact(file models.ForensicFile, artifactType string) models.ForensicFile {
+	switch artifactType {
+	case "browser":
+		return artifactdetector.ClassifyBrowserArtifact(file)
+	case "communication", "email":
+		return artifactdetector.ClassifyCommunicationArtifact(file)
+	default:
+		// Try to detect based on file content
+		data, err := os.ReadFile(file.Path)
+		if err != nil {
+			return file
+		}
+
+		if artifactdetector.IsSQLiteFile(data) {
+			return artifactdetector.ClassifyBrowserArtifact(file)
+		} else if artifactdetector.IsMBOXFile(data) || artifactdetector.IsPSTFile(data) {
+			return artifactdetector.ClassifyCommunicationArtifact(file)
+		}
+
+		return file
+	}
 }

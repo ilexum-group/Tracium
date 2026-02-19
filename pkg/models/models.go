@@ -84,12 +84,45 @@ type ServiceInfo struct {
 	Description string `json:"description"`
 }
 
+// BrowserArtifacts represents structured browser artifacts collected from the system
+type BrowserArtifacts struct {
+	ChromiumProfiles   []ForensicFile `json:"chromium_profiles,omitempty"`
+	ChromiumExtensions []ForensicFile `json:"chromium_extensions,omitempty"`
+	Bookmarks          []ForensicFile `json:"bookmarks,omitempty"`
+	Cache              []ForensicFile `json:"cache,omitempty"`
+	Cookies            []ForensicFile `json:"cookies,omitempty"`
+	Downloads          []ForensicFile `json:"downloads,omitempty"`
+	FormAutofill       []ForensicFile `json:"form_autofill,omitempty"`
+	History            []ForensicFile `json:"history,omitempty"`
+	SearchHistory      []ForensicFile `json:"search_history,omitempty"`
+}
+
+// GmailFolders represents Gmail-specific folder structures
+type GmailFolders struct {
+	Drafts []ForensicFile `json:"drafts,omitempty"`
+	Sent   []ForensicFile `json:"sent,omitempty"`
+	Trash  []ForensicFile `json:"trash,omitempty"`
+}
+
+// EmailArtifacts represents email artifacts (generic and Gmail-specific)
+type EmailArtifacts struct {
+	Default []ForensicFile `json:"default,omitempty"`
+	Gmail   GmailFolders   `json:"gmail,omitempty"`
+}
+
+// CommunicationArtifacts represents communication artifacts (email accounts, messages)
+type CommunicationArtifacts struct {
+	Accounts []ForensicFile `json:"accounts,omitempty"`
+	Emails   EmailArtifacts `json:"emails,omitempty"`
+}
+
 // ForensicsData holds forensic artifacts collected from the system
 type ForensicsData struct {
 	RecentFiles       []RecentFileEntry   `json:"recent_files"`
 	CommandHistory    []CommandEntry      `json:"command_history"`
 	NetworkHistory    NetworkHistoryData  `json:"network_history"`
-	BrowserDBFiles    []ForensicFile      `json:"browser_db_files,omitempty"`
+	Browser           BrowserArtifacts    `json:"browser,omitempty"`
+	Communication     CommunicationArtifacts `json:"communication,omitempty"`
 	SystemLogs        []LogFile           `json:"system_logs,omitempty"`
 	ScheduledTasks    []ScheduledTask     `json:"scheduled_tasks,omitempty"`
 	ActiveConnections []NetworkConnection `json:"active_connections,omitempty"`

@@ -198,11 +198,21 @@ func (lc *LoggingCollector) GetServices() []models.ServiceInfo {
 	return result
 }
 
-// CollectBrowserDBFiles collects browser database files
-func (lc *LoggingCollector) CollectBrowserDBFiles(errors *[]string) []models.ForensicFile {
-	var result []models.ForensicFile
-	_ = lc.logMethodCall("CollectBrowserDBFiles", []string{}, func() error {
-		result = lc.collector.CollectBrowserDBFiles(errors)
+// CollectBrowserArtifacts collects browser artifacts
+func (lc *LoggingCollector) CollectBrowserArtifacts(errors *[]string) models.BrowserArtifacts {
+	var result models.BrowserArtifacts
+	_ = lc.logMethodCall("CollectBrowserArtifacts", []string{}, func() error {
+		result = lc.collector.CollectBrowserArtifacts(errors)
+		return nil
+	})
+	return result
+}
+
+// CollectCommunicationArtifacts collects communication artifacts
+func (lc *LoggingCollector) CollectCommunicationArtifacts(errors *[]string) models.CommunicationArtifacts {
+	var result models.CommunicationArtifacts
+	_ = lc.logMethodCall("CollectCommunicationArtifacts", []string{}, func() error {
+		result = lc.collector.CollectCommunicationArtifacts(errors)
 		return nil
 	})
 	return result
