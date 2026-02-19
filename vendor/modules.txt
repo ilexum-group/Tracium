@@ -30,7 +30,7 @@ golang.org/x/exp/constraints
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# howett.net/plist v1.0.0
+# howett.net/plist v1.0.1
 ## explicit; go 1.12
 howett.net/plist
 # modernc.org/libc v1.65.10
