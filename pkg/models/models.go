@@ -1,6 +1,8 @@
 // Package models defines data structures for system information collected by the agent
 package models
 
+import "time"
+
 // SystemData represents the complete data collected by the agent
 type SystemData struct {
 	CaseID       string             `json:"case_id"` // Case identifier for correlation
@@ -84,58 +86,26 @@ type ServiceInfo struct {
 	Description string `json:"description"`
 }
 
-// BrowserArtifacts represents structured browser artifacts collected from the system
-type BrowserArtifacts struct {
-	ChromiumProfiles   []ForensicFile `json:"chromium_profiles,omitempty"`
-	ChromiumExtensions []ForensicFile `json:"chromium_extensions,omitempty"`
-	Bookmarks          []ForensicFile `json:"bookmarks,omitempty"`
-	Cache              []ForensicFile `json:"cache,omitempty"`
-	Cookies            []ForensicFile `json:"cookies,omitempty"`
-	Downloads          []ForensicFile `json:"downloads,omitempty"`
-	FormAutofill       []ForensicFile `json:"form_autofill,omitempty"`
-	History            []ForensicFile `json:"history,omitempty"`
-	SearchHistory      []ForensicFile `json:"search_history,omitempty"`
-}
-
-// GmailFolders represents Gmail-specific folder structures
-type GmailFolders struct {
-	Drafts []ForensicFile `json:"drafts,omitempty"`
-	Sent   []ForensicFile `json:"sent,omitempty"`
-	Trash  []ForensicFile `json:"trash,omitempty"`
-}
-
-// EmailArtifacts represents email artifacts (generic and Gmail-specific)
-type EmailArtifacts struct {
-	Default []ForensicFile `json:"default,omitempty"`
-	Gmail   GmailFolders   `json:"gmail,omitempty"`
-}
-
-// CommunicationArtifacts represents communication artifacts (email accounts, messages)
-type CommunicationArtifacts struct {
-	Accounts []ForensicFile `json:"accounts,omitempty"`
-	Emails   EmailArtifacts `json:"emails,omitempty"`
-}
-
 // ForensicsData holds forensic artifacts collected from the system
 type ForensicsData struct {
-	RecentFiles       []RecentFileEntry   `json:"recent_files"`
-	CommandHistory    []CommandEntry      `json:"command_history"`
-	NetworkHistory    NetworkHistoryData  `json:"network_history"`
-	Browser           BrowserArtifacts    `json:"browser,omitempty"`
+	RecentFiles       []RecentFileEntry      `json:"recent_files"`
+	CommandHistory    []CommandEntry         `json:"command_history"`
+	NetworkHistory    NetworkHistoryData     `json:"network_history"`
+	Browser           BrowserArtifacts       `json:"browser,omitempty"`
 	Communication     CommunicationArtifacts `json:"communication,omitempty"`
-	SystemLogs        []LogFile           `json:"system_logs,omitempty"`
-	ScheduledTasks    []ScheduledTask     `json:"scheduled_tasks,omitempty"`
-	ActiveConnections []NetworkConnection `json:"active_connections,omitempty"`
-	HostsFile         *ForensicFile       `json:"hosts_file,omitempty"`
-	SSHKeys           []SSHKeyInfo        `json:"ssh_keys,omitempty"`
-	InstalledSoftware []SoftwareInfo      `json:"installed_software,omitempty"`
-	EnvironmentVars   map[string]string   `json:"environment_vars,omitempty"`
-	RecentDownloads   []RecentFileEntry   `json:"recent_downloads,omitempty"`
-	USBHistory        []USBDevice         `json:"usb_history,omitempty"`
-	PrefetchFiles     []PrefetchInfo      `json:"prefetch_files,omitempty"`
-	RecycleBin        []DeletedFile       `json:"recycle_bin,omitempty"`
-	ClipboardContent  string              `json:"clipboard_content,omitempty"`
-	CollectionErrors  []string            `json:"collection_errors,omitempty"`
+	SystemLogs        []LogFile              `json:"system_logs,omitempty"`
+	ScheduledTasks    []ScheduledTask        `json:"scheduled_tasks,omitempty"`
+	ActiveConnections []NetworkConnection    `json:"active_connections,omitempty"`
+	HostsFile         *ForensicFile          `json:"hosts_file,omitempty"`
+	SSHKeys           []SSHKeyInfo           `json:"ssh_keys,omitempty"`
+	InstalledSoftware []SoftwareInfo         `json:"installed_software,omitempty"`
+	EnvironmentVars   map[string]string      `json:"environment_vars,omitempty"`
+	RecentDownloads   []RecentFileEntry      `json:"recent_downloads,omitempty"`
+	USBHistory        []USBDevice            `json:"usb_history,omitempty"`
+	PrefetchFiles     []PrefetchInfo         `json:"prefetch_files,omitempty"`
+	RecycleBin        []DeletedFile          `json:"recycle_bin,omitempty"`
+	ClipboardContent  string                 `json:"clipboard_content,omitempty"`
+	CollectionErrors  []string               `json:"collection_errors,omitempty"`
 }
 
 // FilesystemTree represents the full filesystem tree of the analyzed system.
@@ -286,4 +256,187 @@ type DeletedFile struct {
 	FileName     string `json:"file_name"`
 	Size         int64  `json:"size"`
 	DeletedTime  int64  `json:"deleted_time,omitempty"`
+}
+
+// =============================================================================
+// Browser Artifacts - Structured Types
+// =============================================================================
+
+// BrowserProfile represents a browser user profile
+type BrowserProfile struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Browser   string `json:"browser"` // chrome, firefox, edge, etc.
+	IsDefault bool   `json:"is_default,omitempty"`
+}
+
+// BrowserHistory represents a browser history entry
+type BrowserHistory struct {
+	URL          string    `json:"url"`
+	Title        string    `json:"title,omitempty"`
+	VisitTime    time.Time `json:"visit_time"`
+	VisitCount   int       `json:"visit_count,omitempty"`
+	FromDownload bool      `json:"from_download,omitempty"`
+	IsUploadPage bool      `json:"is_upload_page,omitempty"`
+	Profile      string    `json:"profile,omitempty"`
+}
+
+// BrowserDownload represents a browser download entry
+type BrowserDownload struct {
+	URL        string    `json:"url"`
+	TargetPath string    `json:"target_path"`
+	StartTime  time.Time `json:"start_time"`
+	EndTime    time.Time `json:"end_time,omitempty"`
+	FileSize   int64     `json:"file_size,omitempty"`
+	MimeType   string    `json:"mime_type,omitempty"`
+	DangerType string    `json:"danger_type,omitempty"`
+	Opened     bool      `json:"opened,omitempty"`
+	Profile    string    `json:"profile,omitempty"`
+}
+
+// BrowserUpload represents a browser file upload entry
+type BrowserUpload struct {
+	SourcePath     string    `json:"source_path"`
+	DestinationURL string    `json:"destination_url"`
+	UploadTime     time.Time `json:"upload_time"`
+	FileSize       int64     `json:"file_size,omitempty"`
+	Profile        string    `json:"profile,omitempty"`
+}
+
+// BrowserCookie represents a browser cookie entry
+type BrowserCookie struct {
+	Domain   string    `json:"domain"`
+	Name     string    `json:"name"`
+	Value    string    `json:"value,omitempty"`
+	Path     string    `json:"path,omitempty"`
+	Expires  time.Time `json:"expires,omitempty"`
+	HTTPOnly bool      `json:"http_only,omitempty"`
+	Secure   bool      `json:"secure,omitempty"`
+	SameSite string    `json:"same_site,omitempty"`
+	Profile  string    `json:"profile,omitempty"`
+}
+
+// BrowserFormEntry represents a browser form autofill entry
+type BrowserFormEntry struct {
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	Count   int    `json:"count,omitempty"`
+	Profile string `json:"profile,omitempty"`
+}
+
+// BrowserSearch represents a browser search history entry
+type BrowserSearch struct {
+	Query   string    `json:"query"`
+	Time    time.Time `json:"time"`
+	Engine  string    `json:"engine,omitempty"`
+	Profile string    `json:"profile,omitempty"`
+}
+
+// BrowserBookmark represents a browser bookmark entry
+type BrowserBookmark struct {
+	Title   string    `json:"title"`
+	URL     string    `json:"url"`
+	Folder  string    `json:"folder,omitempty"`
+	AddDate time.Time `json:"add_date,omitempty"`
+	Profile string    `json:"profile,omitempty"`
+}
+
+// BrowserExtension represents a browser extension
+type BrowserExtension struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	Profile     string `json:"profile,omitempty"`
+}
+
+// BrowserArtifacts represents structured browser artifacts
+type BrowserArtifacts struct {
+	Profiles    []BrowserProfile   `json:"profiles,omitempty"`
+	History     []BrowserHistory   `json:"history,omitempty"`
+	Downloads   []BrowserDownload  `json:"downloads,omitempty"`
+	Uploads     []BrowserUpload    `json:"uploads,omitempty"`
+	Cookies     []BrowserCookie    `json:"cookies,omitempty"`
+	FormEntries []BrowserFormEntry `json:"form_entries,omitempty"`
+	Searches    []BrowserSearch    `json:"searches,omitempty"`
+	Bookmarks   []BrowserBookmark  `json:"bookmarks,omitempty"`
+	Extensions  []BrowserExtension `json:"extensions,omitempty"`
+}
+
+// =============================================================================
+// Communication Artifacts - Structured Types
+// =============================================================================
+
+// EmailArtifact represents an email message
+type EmailArtifact struct {
+	ID            string    `json:"id"`
+	From          string    `json:"from"`
+	To            []string  `json:"to"`
+	CC            []string  `json:"cc,omitempty"`
+	BCC           []string  `json:"bcc,omitempty"`
+	Subject       string    `json:"subject"`
+	BodyPreview   string    `json:"body_preview,omitempty"`
+	SentTime      time.Time `json:"sent_time"`
+	HasAttachment bool      `json:"has_attachment"`
+	AttachmentIDs []string  `json:"attachment_ids,omitempty"`
+	Folder        string    `json:"folder,omitempty"` // inbox, sent, drafts, trash
+	Read          bool      `json:"read,omitempty"`
+	Starred       bool      `json:"starred,omitempty"`
+}
+
+// MessageArtifact represents a chat message (WhatsApp, Telegram, etc.)
+type MessageArtifact struct {
+	App       string    `json:"app"` // whatsapp, telegram, signal, discord, etc.
+	Sender    string    `json:"sender"`
+	Receiver  string    `json:"receiver,omitempty"`
+	Group     string    `json:"group,omitempty"`
+	Content   string    `json:"content,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+	HasFile   bool      `json:"has_file,omitempty"`
+	FileID    string    `json:"file_id,omitempty"`
+	Deleted   bool      `json:"deleted,omitempty"`
+}
+
+// AttachmentArtifact represents a file attachment
+type AttachmentArtifact struct {
+	ID        string    `json:"id"`
+	FileName  string    `json:"file_name"`
+	FilePath  string    `json:"file_path,omitempty"`
+	Size      int64     `json:"size,omitempty"`
+	Hash      string    `json:"hash,omitempty"`
+	SentTime  time.Time `json:"sent_time,omitempty"`
+	SourceApp string    `json:"source_app,omitempty"`
+}
+
+// ContactArtifact represents a contact
+type ContactArtifact struct {
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Email     []string `json:"email,omitempty"`
+	Phone     []string `json:"phone,omitempty"`
+	App       string   `json:"app,omitempty"`
+	CreatedAt string   `json:"created_at,omitempty"`
+}
+
+// CallLogArtifact represents a call log entry
+type CallLogArtifact struct {
+	ID        string    `json:"id"`
+	Caller    string    `json:"caller"`
+	Receiver  string    `json:"receiver"`
+	Duration  int       `json:"duration"` // seconds
+	Timestamp time.Time `json:"timestamp"`
+	Type      string    `json:"type"` // incoming, outgoing, missed
+	App       string    `json:"app,omitempty"`
+	Recorded  bool      `json:"recorded,omitempty"`
+}
+
+// CommunicationArtifacts represents structured communication artifacts
+type CommunicationArtifacts struct {
+	Emails      []EmailArtifact      `json:"emails,omitempty"`
+	Messages    []MessageArtifact    `json:"messages,omitempty"`
+	Attachments []AttachmentArtifact `json:"attachments,omitempty"`
+	Contacts    []ContactArtifact    `json:"contacts,omitempty"`
+	CallLogs    []CallLogArtifact    `json:"call_logs,omitempty"`
 }
