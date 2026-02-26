@@ -162,18 +162,13 @@ type TreeNode struct {
 
 // ForensicFile represents a collected artifact file (e.g., browser DB)
 type ForensicFile struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`        // Local path where file was copied (temp)
-	SourcePath  string `json:"source_path"` // Original path from the forensic image
-	Size        int64  `json:"size"`
-	Hash        string `json:"hash"`
-	Category    string `json:"category"` // e.g., browser_db
-	Browser     string `json:"browser,omitempty"`
-	Data        string `json:"data,omitempty"`        // Parsed content (JSON/text) or base64 for binary
-	DataFormat  string `json:"data_format,omitempty"` // "json", "text", "base64"
-	FileType    string `json:"file_type,omitempty"`  // Human readable file type
-	TableCount  int    `json:"table_count,omitempty"` // Number of tables if SQLite
-	ParseError  string `json:"parse_error,omitempty"` // Error message if parsing failed
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+	Hash     string `json:"hash"`
+	Category string `json:"category"` // e.g., browser_db
+	Browser  string `json:"browser,omitempty"`
+	Data     string `json:"data,omitempty"` // Base64 encoded file content
 }
 
 // RecentFileEntry represents a recently accessed file

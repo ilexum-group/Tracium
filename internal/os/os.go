@@ -541,81 +541,45 @@ func parentPath(p string) string {
 
 // Shared forensics helper methods in Default
 
-// CopyFileArtifact copies a file if it exists, parses it, and returns its metadata
+// CopyFileArtifact copies a file if it exists and returns its metadata
 func (d *Default) CopyFileArtifact(src, prefix, browser string) (*models.ForensicFile, error) {
 	if _, err := d.OSStat(src); err != nil {
 		return nil, fmt.Errorf("artifact missing: %s", src)
 	}
 
-	// Read file content for parsing
+	dest := filepath.Join(os.TempDir(), fmt.Sprintf("%s_%d.db", prefix, time.Now().UnixNano()))
+
 	//nolint:gosec // G304: src is from trusted forensics collection sources
 	sourceFile, err := d.OSOpen(src)
 	if err != nil {
-		return nil, fmt.Errorf("open failed for %s: %w", src, err)
+		return nil, fmt.Errorf("copy failed for %s: %w", src, err)
 	}
+	defer func() {
+		_ = sourceFile.Close() // Explicitly ignore error
+	}()
 
-	data, err := io.ReadAll(sourceFile)
-	_ = sourceFile.Close()
+	//nolint:gosec // G304: dest is controlled output path
+	destFile, err := d.OSCreate(dest)
 	if err != nil {
-		return nil, fmt.Errorf("read failed for %s: %w", src, err)
+		return nil, fmt.Errorf("copy failed for %s: %w", src, err)
 	}
+	defer func() {
+		_ = destFile.Close() // Explicitly ignore error
+	}()
 
-	// Detect file type and parse content
-	parser := NewArtifactParser()
-	filename := filepath.Base(src)
-	parseResult := parser.DetectAndParse(data, filename)
-
-	// Determine file type for category
-	fileType := GetFileType(data, filename)
-	category := "browser_db"
-	if strings.Contains(fileType, "SQLite") {
-		category = "browser_sqlite"
-	} else if strings.Contains(fileType, "JSON") {
-		category = "browser_json"
-	} else if strings.Contains(fileType, "Text") {
-		category = "browser_text"
-	}
-
-	// Write to temp only if needed (for large files)
-	needsCopy := len(data) > 10*1024*1024 // Only copy if > 10MB
-	var dest string
-	var written int64
-
-	if needsCopy {
-		dest = filepath.Join(os.TempDir(), fmt.Sprintf("%s_%d.db", prefix, time.Now().UnixNano()))
-		//nolint:gosec // G304: dest is controlled output path
-		destFile, err := d.OSCreate(dest)
-		if err != nil {
-			return nil, fmt.Errorf("copy failed for %s: %w", src, err)
-		}
-		writtenInt, err := destFile.Write(data)
-		_ = destFile.Close()
-		if err != nil {
-			return nil, fmt.Errorf("write failed for %s: %w", src, err)
-		}
-		written = int64(writtenInt)
-	} else {
-		written = int64(len(data))
-	}
-
-	// Compute hash
 	hasher := sha256.New()
-	hasher.Write(data)
-	hash := fmt.Sprintf("%x", hasher.Sum(nil))
+	written, err := io.Copy(io.MultiWriter(destFile, hasher), sourceFile)
+	if err != nil {
+		return nil, fmt.Errorf("copy failed for %s: %w", src, err)
+	}
 
 	return &models.ForensicFile{
-		Name:         filename,
-		Path:         dest,
-		SourcePath:   src,
-		Size:         written,
-		Hash:         hash,
-		Category:     category,
-		Browser:      browser,
-		Data:         parseResult.Content, // Parsed content (JSON/text) or base64
-		DataFormat:   parseResult.Format,   // "json", "text", "base64"
-		FileType:     fileType,             // Human readable file type
-		TableCount:   parseResult.TableCount, // Number of tables if SQLite
-		ParseError:   parseResult.Error,     // Error message if parsing failed
+		Name:     filepath.Base(src),
+		Path:     dest,
+		Size:     written,
+		Hash:     fmt.Sprintf("%x", hasher.Sum(nil)),
+		Category: "browser_db",
+		Browser:  browser,
 	}, nil
 }
 
